@@ -12,6 +12,8 @@
 #'         - 'tuned_prediction': Individual algorithm predictions + ensemble from tuned models (NULL if no tuned models)
 #'         Each element contains probability predictions for each algorithm and ensemble averages
 #'
+#' @importFrom mlr3 TaskClassif
+#'
 #' @export
 #'
 #' @examples
@@ -79,7 +81,7 @@ predict_classifier <- function(model_results, X_prediction = NULL) {
                 pred_data$target <- factor(rep("FALSE", nrow(pred_data)),
                                          levels = c("FALSE", "TRUE"))
 
-                pred_task <- mlr3::TaskClassif$new(
+                pred_task <- TaskClassif$new(
                     id = "pred_task",
                     backend = pred_data,
                     target = "target"
