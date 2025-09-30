@@ -31,37 +31,48 @@ predict_classifier <- function(model_results, X_prediction = NULL) {
         stop("model_results must be a list")
     }
 
-    # Detect structure of model_results
-    has_tuned <- FALSE
-    has_untuned <- FALSE
-    model_list <- list()
+    # Helper function to detect and extract model structure
+    detect_model_structure <- function(model_results) {
+        structure <- list(has_tuned = FALSE, has_untuned = FALSE, model_list = list())
 
-    if ("tuned" %in% names(model_results) && "untuned" %in% names(model_results)) {
-        # Structure from model_tuning = "all"
-        has_tuned <- length(model_results$tuned) > 0
-        has_untuned <- length(model_results$untuned) > 0
-        if (has_tuned) model_list$tuned <- model_results$tuned
-        if (has_untuned) model_list$untuned <- model_results$untuned
-    } else if ("tuned" %in% names(model_results)) {
-        # Structure from model_tuning = "tuned" (wrapped in list)
-        has_tuned <- TRUE
-        model_list$tuned <- model_results$tuned
-    } else if ("untuned" %in% names(model_results)) {
-        # Structure from model_tuning = "untuned" (wrapped in list)
-        has_untuned <- TRUE
-        model_list$untuned <- model_results$untuned
-    } else {
-        # Direct list of learners (from model_tuning = "tuned" or "untuned" without wrapper)
-        # Check if these are mlr3 learners
-        first_element <- model_results[[1]]
-        if (inherits(first_element, "Learner")) {
-            # Assume these are tuned models if they have been trained
-            has_tuned <- TRUE
-            model_list$tuned <- model_results
-        } else {
-            stop("Unrecognized structure in model_results")
+        # Check for explicit tuned/untuned structure
+        if ("tuned" %in% names(model_results) && "untuned" %in% names(model_results)) {
+            # Structure from model_tuning = "all"
+            structure$has_tuned <- length(model_results$tuned) > 0
+            structure$has_untuned <- length(model_results$untuned) > 0
+            if (structure$has_tuned) structure$model_list$tuned <- model_results$tuned
+            if (structure$has_untuned) structure$model_list$untuned <- model_results$untuned
+            return(structure)
         }
+
+        # Check for single type with explicit structure
+        if ("tuned" %in% names(model_results)) {
+            structure$has_tuned <- TRUE
+            structure$model_list$tuned <- model_results$tuned
+            return(structure)
+        }
+
+        if ("untuned" %in% names(model_results)) {
+            structure$has_untuned <- TRUE
+            structure$model_list$untuned <- model_results$untuned
+            return(structure)
+        }
+
+        # Assume direct list of learners
+        if (length(model_results) > 0 && inherits(model_results[[1]], "Learner")) {
+            structure$has_tuned <- TRUE
+            structure$model_list$tuned <- model_results
+            return(structure)
+        }
+
+        stop("Unrecognized structure in model_results")
     }
+
+    # Detect structure of model_results
+    structure <- detect_model_structure(model_results)
+    has_tuned <- structure$has_tuned
+    has_untuned <- structure$has_untuned
+    model_list <- structure$model_list
 
     # Helper function to make predictions for a set of learners
     predict_learners <- function(learners, X_pred = NULL) {
@@ -73,13 +84,13 @@ predict_classifier <- function(model_results, X_prediction = NULL) {
             if (is.null(X_pred)) {
                 # Predict on training data
                 pred_result <- learner$predict(learner$task)
-                predictions[[alg_name]] <- pred_result$prob[, "TRUE"]
+                predictions[[alg_name]] <- pred_result$prob[, .TARGET_POSITIVE]
             } else {
                 # Create prediction task for new data
                 pred_data <- data.frame(X_pred)
                 # Create dummy target (will be ignored for prediction)
-                pred_data$target <- factor(rep("FALSE", nrow(pred_data)),
-                                         levels = c("FALSE", "TRUE"))
+                pred_data$target <- factor(rep(.TARGET_NEGATIVE, nrow(pred_data)),
+                                         levels = .TARGET_LEVELS)
 
                 pred_task <- TaskClassif$new(
                     id = "pred_task",
@@ -88,7 +99,7 @@ predict_classifier <- function(model_results, X_prediction = NULL) {
                 )
 
                 pred_result <- learner$predict(pred_task)
-                predictions[[alg_name]] <- pred_result$prob[, "TRUE"]
+                predictions[[alg_name]] <- pred_result$prob[, .TARGET_POSITIVE]
             }
         }
 

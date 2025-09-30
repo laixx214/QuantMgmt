@@ -1,7 +1,7 @@
 Package: QuantMgmt
 Type: Package
 Title: Quantitative Management Tools for Machine Learning
-Version: 0.1.0
+Version: 0.2.0
 Author: yufeng.lai
 Maintainer: yufeng.lai <yufeng.lai@example.com>
 Authors@R: person("yufeng.lai", email = "yufeng.lai@example.com", role = c("aut", "cre"))
@@ -21,7 +21,10 @@ Imports:
     paradox,
     pROC,
     precrec,
-    parallel
+    parallel,
+    future,
+    future.apply
 Suggests:
+    sparklyr,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3

@@ -65,8 +65,43 @@ evaluate_classifier_performance <- function(model_results, data = NULL, decision
             stop("Could not extract training labels from model_results")
         }
 
-        Y_eval <- as.numeric(as.character(first_learner$task$truth()) == "TRUE")
+        Y_eval <- as.numeric(as.character(first_learner$task$truth()) == .TARGET_POSITIVE)
         data_source <- "training"
+    }
+
+    # Helper function to process predictions for a given model type
+    process_predictions <- function(prediction_list, model_type, Y_eval, decision_threshold, data_source) {
+        results <- list()
+
+        for (alg_name in names(prediction_list)) {
+            if (alg_name != "ensemble_avg") {
+                predicted_prob <- prediction_list[[alg_name]]
+                metrics <- binary_classification_metrics(predicted_prob, Y_eval, decision_threshold)
+
+                # Add model information
+                metrics$algorithm <- alg_name
+                metrics$model_type <- model_type
+                metrics$data_source <- data_source
+
+                # Store results
+                result_name <- paste(alg_name, model_type, sep = "_")
+                results[[result_name]] <- metrics
+            }
+        }
+
+        # Add ensemble results if available
+        if ("ensemble_avg" %in% names(prediction_list)) {
+            predicted_prob <- prediction_list$ensemble_avg
+            metrics <- binary_classification_metrics(predicted_prob, Y_eval, decision_threshold)
+
+            metrics$algorithm <- "ensemble"
+            metrics$model_type <- model_type
+            metrics$data_source <- data_source
+
+            results[[paste("ensemble", model_type, sep = "_")]] <- metrics
+        }
+
+        return(results)
     }
 
     # Initialize results list
@@ -74,64 +109,16 @@ evaluate_classifier_performance <- function(model_results, data = NULL, decision
 
     # Process untuned predictions if available
     if (!is.null(predictions$untuned_prediction)) {
-        for (alg_name in names(predictions$untuned_prediction)) {
-            if (alg_name != "ensemble_avg") {
-                predicted_prob <- predictions$untuned_prediction[[alg_name]]
-                metrics <- binary_classification_metrics(predicted_prob, Y_eval, decision_threshold)
-
-                # Add model information
-                metrics$algorithm <- alg_name
-                metrics$model_type <- "untuned"
-                metrics$data_source <- data_source
-
-                # Store results
-                result_name <- paste(alg_name, "untuned", sep = "_")
-                all_results[[result_name]] <- metrics
-            }
-        }
-
-        # Add ensemble results for untuned
-        if ("ensemble_avg" %in% names(predictions$untuned_prediction)) {
-            predicted_prob <- predictions$untuned_prediction$ensemble_avg
-            metrics <- binary_classification_metrics(predicted_prob, Y_eval, decision_threshold)
-
-            metrics$algorithm <- "ensemble"
-            metrics$model_type <- "untuned"
-            metrics$data_source <- data_source
-
-            all_results[["ensemble_untuned"]] <- metrics
-        }
+        all_results <- c(all_results, process_predictions(
+            predictions$untuned_prediction, "untuned", Y_eval, decision_threshold, data_source
+        ))
     }
 
     # Process tuned predictions if available
     if (!is.null(predictions$tuned_prediction)) {
-        for (alg_name in names(predictions$tuned_prediction)) {
-            if (alg_name != "ensemble_avg") {
-                predicted_prob <- predictions$tuned_prediction[[alg_name]]
-                metrics <- binary_classification_metrics(predicted_prob, Y_eval, decision_threshold)
-
-                # Add model information
-                metrics$algorithm <- alg_name
-                metrics$model_type <- "tuned"
-                metrics$data_source <- data_source
-
-                # Store results
-                result_name <- paste(alg_name, "tuned", sep = "_")
-                all_results[[result_name]] <- metrics
-            }
-        }
-
-        # Add ensemble results for tuned
-        if ("ensemble_avg" %in% names(predictions$tuned_prediction)) {
-            predicted_prob <- predictions$tuned_prediction$ensemble_avg
-            metrics <- binary_classification_metrics(predicted_prob, Y_eval, decision_threshold)
-
-            metrics$algorithm <- "ensemble"
-            metrics$model_type <- "tuned"
-            metrics$data_source <- data_source
-
-            all_results[["ensemble_tuned"]] <- metrics
-        }
+        all_results <- c(all_results, process_predictions(
+            predictions$tuned_prediction, "tuned", Y_eval, decision_threshold, data_source
+        ))
     }
 
     # Combine all results
@@ -158,23 +145,25 @@ evaluate_classifier_performance <- function(model_results, data = NULL, decision
                 tuned_metrics <- result_df[tuned_row, ]
                 untuned_metrics <- result_df[untuned_row, ]
 
-                # Calculate percentage improvements
+                # Calculate percentage improvements using vectorized approach
+                metric_names <- c("classif.acc", "classif.auc", "classif.prauc",
+                                 "classif.f1", "classif.precision", "classif.recall")
+
+                improvement_values <- sapply(metric_names, function(metric) {
+                    untuned_val <- untuned_metrics[[metric]]
+                    tuned_val <- tuned_metrics[[metric]]
+                    if (is.na(untuned_val) || untuned_val == 0) {
+                        return(NA)
+                    }
+                    ((tuned_val - untuned_val) / untuned_val) * 100
+                })
+
                 improvement <- data.frame(
-                    classif.acc = ifelse(is.na(untuned_metrics$classif.acc) || untuned_metrics$classif.acc == 0, NA,
-                                       ((tuned_metrics$classif.acc - untuned_metrics$classif.acc) / untuned_metrics$classif.acc) * 100),
-                    classif.auc = ifelse(is.na(untuned_metrics$classif.auc) || untuned_metrics$classif.auc == 0, NA,
-                                       ((tuned_metrics$classif.auc - untuned_metrics$classif.auc) / untuned_metrics$classif.auc) * 100),
-                    classif.prauc = ifelse(is.na(untuned_metrics$classif.prauc) || untuned_metrics$classif.prauc == 0, NA,
-                                         ((tuned_metrics$classif.prauc - untuned_metrics$classif.prauc) / untuned_metrics$classif.prauc) * 100),
-                    classif.f1 = ifelse(is.na(untuned_metrics$classif.f1) || untuned_metrics$classif.f1 == 0, NA,
-                                      ((tuned_metrics$classif.f1 - untuned_metrics$classif.f1) / untuned_metrics$classif.f1) * 100),
-                    classif.precision = ifelse(is.na(untuned_metrics$classif.precision) || untuned_metrics$classif.precision == 0, NA,
-                                             ((tuned_metrics$classif.precision - untuned_metrics$classif.precision) / untuned_metrics$classif.precision) * 100),
-                    classif.recall = ifelse(is.na(untuned_metrics$classif.recall) || untuned_metrics$classif.recall == 0, NA,
-                                          ((tuned_metrics$classif.recall - untuned_metrics$classif.recall) / untuned_metrics$classif.recall) * 100),
+                    as.list(improvement_values),
                     algorithm = alg_name,
                     model_type = "improvement_pct",
-                    data_source = tuned_metrics$data_source
+                    data_source = tuned_metrics$data_source,
+                    stringsAsFactors = FALSE
                 )
 
                 improvement_name <- paste(alg_name, "improvement_pct", sep = "_")

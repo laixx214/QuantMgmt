@@ -65,26 +65,16 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
                               spark_connection = NULL) {
 
     # Input validation
-    if (!is.matrix(X_train) && !is.data.frame(X_train)) {
-        stop("X_train must be a matrix or data frame")
-    }
-
-    if (is.logical(Y_train)) {
-        Y_train <- as.numeric(Y_train)
-    } else if (is.numeric(Y_train)) {
-        if (!all(Y_train %in% c(0, 1))) {
-            stop("Y_train must be logical or contain only values 0 and 1")
-        }
-    } else {
-        stop("Y_train must be logical or numeric with values 0 and 1 only")
-    }
-
-    if (nrow(X_train) != length(Y_train)) {
-        stop("X_train and Y_train must have the same number of observations")
-    }
+    X_train <- validate_feature_matrix(X_train, "X_train", allow_na = FALSE)
+    Y_train <- validate_binary_outcome(Y_train, "Y_train")
+    validate_matching_dimensions(X_train, Y_train, "X_train", "Y_train")
 
     if (!is.list(algorithms) || is.null(names(algorithms))) {
         stop("algorithms must be a named list")
+    }
+
+    if (length(algorithms) == 0) {
+        stop("algorithms list cannot be empty")
     }
 
     valid_algorithms <- c("ranger", "xgboost")
@@ -96,6 +86,16 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
     valid_tuning_options <- c("untuned", "tuned", "all")
     if (!model_tuning %in% valid_tuning_options) {
         stop(paste("model_tuning must be one of:", paste(valid_tuning_options, collapse = ", ")))
+    }
+
+    # Validate cv_folds
+    if (!is.numeric(cv_folds) || length(cv_folds) != 1 || cv_folds < 2) {
+        stop("cv_folds must be a single numeric value >= 2")
+    }
+
+    # Validate n_evals
+    if (!is.numeric(n_evals) || length(n_evals) != 1 || n_evals < 1) {
+        stop("n_evals must be a single positive numeric value")
     }
 
     # Detect Spark cluster configuration
@@ -157,14 +157,30 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
 
     # Create task
     task_data <- data.frame(X_train)
-    # Convert to factor with levels "FALSE" and "TRUE" to match mlr3 expectations
-    task_data$target <- factor(Y_train, levels = c(0, 1), labels = c("FALSE", "TRUE"))
+    # Convert to factor with levels to match mlr3 expectations
+    task_data$target <- factor(Y_train, levels = c(0, 1), labels = .TARGET_LEVELS)
 
     task <- TaskClassif$new(
         id = "auto_tune_task",
         backend = task_data,
         target = "target"
     )
+
+    # Helper function to create learner
+    create_learner <- function(alg_name, cores, set_defaults = FALSE) {
+        if (alg_name == "ranger") {
+            learner <- lrn("classif.ranger", predict_type = "prob", num.threads = cores)
+            if (set_defaults) {
+                learner$param_set$values$num.trees <- 500
+            }
+        } else if (alg_name == "xgboost") {
+            learner <- lrn("classif.xgboost", predict_type = "prob", nthread = cores)
+            if (set_defaults) {
+                learner$param_set$values$nrounds <- 100
+            }
+        }
+        return(learner)
+    }
 
     # Internal tuning function with Spark distribution
     tune_learner <- function(learner, param_space, task, measure_name) {
@@ -178,45 +194,29 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
             # Setup future plan to use multiple sessions
             # This distributes work across available Spark executors
             plan(multisession, workers = min(n_executors, n_evals))
-
-            # Create tuning instance with parallel evaluation
-            instance <- ti(
-                task = task,
-                learner = learner,
-                resampling = rsmp("cv", folds = cv_folds),
-                measures = measure,
-                search_space = param_space,
-                terminator = trm("evals", n_evals = n_evals)
-            )
-
-            # Use random search with parallel backend
-            tuner <- tnr("random_search")
-
-            # mlr3 will automatically use the future backend for parallel evaluation
-            tuner$optimize(instance)
-
-            # Reset to sequential processing
-            plan(sequential)
-
-            learner$param_set$values <- instance$result_learner_param_vals
-            return(learner)
-        } else {
-            # Sequential tuning (original implementation)
-            instance <- ti(
-                task = task,
-                learner = learner,
-                resampling = rsmp("cv", folds = cv_folds),
-                measures = measure,
-                search_space = param_space,
-                terminator = trm("evals", n_evals = n_evals)
-            )
-
-            tuner <- tnr("random_search")
-            tuner$optimize(instance)
-
-            learner$param_set$values <- instance$result_learner_param_vals
-            return(learner)
         }
+
+        # Create tuning instance (works for both distributed and sequential)
+        instance <- ti(
+            task = task,
+            learner = learner,
+            resampling = rsmp("cv", folds = cv_folds),
+            measures = measure,
+            search_space = param_space,
+            terminator = trm("evals", n_evals = n_evals)
+        )
+
+        # Use random search (mlr3 automatically uses future backend if configured)
+        tuner <- tnr("random_search")
+        tuner$optimize(instance)
+
+        # Reset to sequential processing if using Spark
+        if (use_spark_distributed) {
+            plan(sequential)
+        }
+
+        learner$param_set$values <- instance$result_learner_param_vals
+        return(learner)
     }
 
     # Initialize result lists
@@ -229,13 +229,8 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
         for (alg_name in names(algorithms)) {
             message(paste("Training", alg_name, "with default parameters..."))
 
-            if (alg_name == "ranger") {
-                learner_untuned <- lrn("classif.ranger", predict_type = "prob",
-                                     num.trees = 500, num.threads = cores_to_use)
-            } else if (alg_name == "xgboost") {
-                learner_untuned <- lrn("classif.xgboost", predict_type = "prob",
-                                     nrounds = 100, nthread = cores_to_use)
-            }
+            # Create learner with default parameters
+            learner_untuned <- create_learner(alg_name, cores_to_use, set_defaults = TRUE)
 
             # Train untuned learner
             learner_untuned$train(task)
@@ -252,11 +247,8 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
             alg_spec <- algorithms[[alg_name]]
             message(paste("Tuning", alg_name, "..."))
 
-            if (alg_name == "ranger") {
-                learner_tuned <- lrn("classif.ranger", predict_type = "prob", num.threads = cores_to_use)
-            } else if (alg_name == "xgboost") {
-                learner_tuned <- lrn("classif.xgboost", predict_type = "prob", nthread = cores_to_use)
-            }
+            # Create learner
+            learner_tuned <- create_learner(alg_name, cores_to_use, set_defaults = FALSE)
 
             # Tune and train the learner
             learner_tuned <- tune_learner(learner_tuned, alg_spec$param_space, task, alg_spec$measure)

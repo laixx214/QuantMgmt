@@ -22,30 +22,15 @@
 #' binary_classification_metrics(predicted_prob, observed_y, decision_threshold = 0.5)
 #'
 binary_classification_metrics <- function(predicted_prob, observed_y, decision_threshold = 0.5) {
-    # Input validation for observed_y
-    if (is.logical(observed_y)) {
-        actual <- as.numeric(observed_y)
-    } else if (is.numeric(observed_y)) {
-        if (!all(observed_y %in% c(0, 1))) {
-            stop("observed_y must be logical or contain only values 0 and 1")
-        }
-        actual <- observed_y
-    } else {
-        stop("observed_y must be logical or numeric with values 0 and 1 only. Factors are not allowed.")
-    }
+    # Input validation
+    actual <- validate_binary_outcome(observed_y, "observed_y")
+    predicted_prob <- validate_probabilities(predicted_prob, "predicted_prob")
 
-    # Input validation for predicted_prob
-    if (!is.numeric(predicted_prob)) {
-        stop("predicted_prob must be numeric")
-    }
-    if (any(predicted_prob < 0) || any(predicted_prob > 1)) {
-        stop("predicted_prob must be between 0 and 1")
-    }
     if (length(predicted_prob) != length(actual)) {
         stop("predicted_prob and observed_y must have the same length")
     }
 
-    # Input validation for decision_threshold
+    # Validate decision_threshold
     if (!is.numeric(decision_threshold) || length(decision_threshold) != 1) {
         stop("decision_threshold must be a single numeric value")
     }
