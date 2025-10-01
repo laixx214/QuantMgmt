@@ -3,6 +3,7 @@
 #' @description Internal validation functions used across the package
 #' @keywords internal
 #' @noRd
+NULL
 
 #' Validate binary outcome variable
 #'

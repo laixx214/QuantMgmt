@@ -13,18 +13,17 @@ Encoding: UTF-8
 RoxygenNote: 7.3.2
 Imports:
     mlr3,
-    mlr3learners,
     mlr3tuning,
     bbotk,
-    ranger,
-    xgboost,
     paradox,
-    pROC,
     precrec,
     parallel,
     future,
     future.apply
 Suggests:
+    mlr3learners,
+    ranger,
+    xgboost,
     sparklyr,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3

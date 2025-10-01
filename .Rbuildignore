@@ -1,0 +1,6 @@
+^\.Rproj\.user$
+^\.git$
+^\.gitignore$
+^\.claude$
+^.*\.Rcheck$
+^\.Rcheck$

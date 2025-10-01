@@ -10,7 +10,6 @@
 #' @return Data frame with classification metrics: classif.acc, classif.auc, classif.prauc,
 #'         classif.f1, classif.precision, classif.recall
 #'
-#' @importFrom pROC auc
 #' @importFrom precrec evalmod auc
 #'
 #' @export
@@ -53,12 +52,18 @@ binary_classification_metrics <- function(predicted_prob, observed_y, decision_t
     recall <- ifelse(tp + fn == 0, NA, tp / (tp + fn))
     f1 <- ifelse(is.na(precision) || is.na(recall) || precision + recall == 0, NA, 2 * precision * recall / (precision + recall))
 
-    # ROC-AUC calculation
-    if(requireNamespace("pROC", quietly = TRUE)) {
-        auc_val <- auc(actual, predicted_prob, quiet = TRUE)
+    # ROC-AUC calculation using precrec
+    auc_val <- NA
+    if(requireNamespace("precrec", quietly = TRUE)) {
+        tryCatch({
+            roc_curve <- evalmod(scores = predicted_prob, labels = actual)
+            auc_results <- auc(roc_curve)
+            auc_val <- auc_results$aucs[auc_results$curvetypes == "ROC"]
+        }, error = function(e) {
+            warning("Error calculating ROC-AUC: ", e$message)
+        })
     } else {
-        auc_val <- NA
-        warning("pROC package not available. AUC will be NA.")
+        warning("precrec package not available. AUC will be NA.")
     }
 
     # PR-AUC calculation using precrec

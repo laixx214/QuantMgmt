@@ -10,8 +10,9 @@ auto_tune_classifier(
   algorithms,
   cv_folds = 2,
   n_evals = 15,
-  cores_to_use = max(1, parallel::detectCores() - 1),
-  model_tuning = "all"
+  cores_to_use = max(1, detectCores() - 1),
+  model_tuning = "all",
+  spark_connection = NULL
 )
 }
 \arguments{
@@ -31,6 +32,10 @@ Each element should contain:
 \item{cores_to_use}{Number of cores to use for parallel processing (default: detectCores() - 1)}
 
 \item{model_tuning}{Character indicating which models to return: "untuned", "tuned", or "all" (default: "all")}
+
+\item{spark_connection}{Optional sparklyr connection object for distributed processing. If provided,
+parameter search evaluations will be distributed across Spark executors.
+Defaults to 18 executors with 8 cores each if configuration cannot be detected.}
 }
 \value{
 Depends on model_tuning parameter:
