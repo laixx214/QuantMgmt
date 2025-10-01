@@ -1,11 +1,3 @@
-library(sparklyr)
-library(dplyr)
-library(mlr3)
-library(mlr3learners)
-library(paradox)
-library(jsonlite)
-
-
 #' Automatically Tune and Train Multiple Classification Models with Spark Distribution
 #'
 #' This function distributes hyperparameter search across Spark executors using spark_apply,
@@ -21,7 +13,7 @@ library(jsonlite)
 #' @param cv_folds Number of cross-validation folds for tuning (default: 5)
 #' @param n_evals Number of random search iterations per algorithm (default: 50)
 #' @param model_tuning Character indicating which models to return: "untuned", "tuned", or "all" (default: "all")
-#' @param seed Integer seed for reproducibility (default: 42). When set, ensures reproducible results.
+#' @param seed Integer seed for reproducibility (default: 123). When set, ensures reproducible results.
 #' @param verbose Logical indicating whether to print progress messages (default: TRUE)
 #'
 #' @return List containing:
@@ -32,7 +24,7 @@ library(jsonlite)
 #'
 #' @importFrom sparklyr spark_connect spark_session_config spark_version sdf_copy_to spark_apply
 #' @importFrom mlr3 TaskClassif lrn msr rsmp resample
-#' @importFrom paradox ps p_int p_dbl
+#' @importFrom paradox ps p_int p_dbl generate_design_random
 #' @importFrom jsonlite toJSON fromJSON
 #' @importFrom DBI dbRemoveTable
 #'
@@ -167,7 +159,7 @@ auto_tune_classifier_spark <- function(sc,
     id = "training_task",
     backend = train_data,
     target = "target",
-    positive = "1"
+    positive = .TARGET_POSITIVE
   )
   
   # ========== TRAIN UNTUNED MODELS ==========
@@ -185,7 +177,7 @@ auto_tune_classifier_spark <- function(sc,
       start_time <- Sys.time()
       
       # Create learner with default parameters
-      learner <- lrn(algo_spec$learner)
+      learner <- lrn(algo_spec$learner, predict_type = "prob")
       
       # Train model
       learner$train(task)
@@ -278,11 +270,11 @@ auto_tune_classifier_spark <- function(sc,
                   id = "task",
                   backend = train_data,
                   target = "target",
-                  positive = "1"
+                  positive = .TARGET_POSITIVE
                 )
                 
                 # Create learner with parameters
-                learner <- lrn(context$learner_id)
+                learner <- lrn(context$learner_id, predict_type = "prob")
                 learner$param_set$values <- as.list(params)
                 
                 # Perform cross-validation
@@ -360,7 +352,7 @@ auto_tune_classifier_spark <- function(sc,
       }
       
       # Train final model with best parameters
-      final_learner <- lrn(algo_spec$learner)
+      final_learner <- lrn(algo_spec$learner, predict_type = "prob")
       final_learner$param_set$values <- as.list(best_params)
       final_learner$train(task)
       
@@ -542,86 +534,3 @@ print.mlr3_ensemble <- function(x, ...) {
   
   invisible(x)
 }
-
-
-# ========== EXAMPLE USAGE ==========
-#
-# library(sparklyr)
-# library(mlr3)
-# library(mlr3learners)
-# library(paradox)
-#
-# # Connect to Spark (Databricks)
-# sc <- spark_connect(method = "databricks")
-#
-# # Prepare your data
-# X_train <- iris[, 1:4]  # Features
-# Y_train <- ifelse(iris$Species == "setosa", 1, 0)  # Binary target
-#
-# # Define algorithms with mlr3/paradox syntax
-# algorithms <- list(
-#   ranger = list(
-#     learner = "classif.ranger",
-#     param_space = paradox::ps(
-#       num.trees = paradox::p_int(100, 500),
-#       mtry.ratio = paradox::p_dbl(0.1, 1),
-#       min.node.size = paradox::p_int(1, 10)
-#     ),
-#     measure = "classif.auc"
-#   ),
-#   xgboost = list(
-#     learner = "classif.xgboost",
-#     param_space = paradox::ps(
-#       nrounds = paradox::p_int(50, 200),
-#       eta = paradox::p_dbl(0.01, 0.3, logscale = TRUE),
-#       max_depth = paradox::p_int(3, 8)
-#     ),
-#     measure = "classif.auc"
-#   )
-# )
-#
-# # OPTION 1: Train only untuned models (fast, uses default parameters)
-# ensemble_untuned <- auto_tune_classifier_spark(
-#   sc = sc,
-#   X_train = X_train,
-#   Y_train = Y_train,
-#   algorithms = algorithms,
-#   model_tuning = "untuned"
-# )
-#
-# # OPTION 2: Train only tuned models (slower, optimizes hyperparameters)
-# ensemble_tuned <- auto_tune_classifier_spark(
-#   sc = sc,
-#   X_train = X_train,
-#   Y_train = Y_train,
-#   algorithms = algorithms,
-#   cv_folds = 5,
-#   n_evals = 50,
-#   model_tuning = "tuned"
-# )
-#
-# # OPTION 3: Train both untuned and tuned models (default)
-# ensemble_all <- auto_tune_classifier_spark(
-#   sc = sc,
-#   X_train = X_train,
-#   Y_train = Y_train,
-#   algorithms = algorithms,
-#   cv_folds = 5,
-#   n_evals = 50,
-#   model_tuning = "all"
-# )
-#
-# # Print summary
-# print(ensemble_all)
-#
-# # Access models
-# tuned_ranger <- ensemble_all$tuned$ranger
-# untuned_ranger <- ensemble_all$untuned$ranger
-#
-# # Use models for prediction
-# new_data <- iris[1:10, 1:4]
-# predictions_tuned <- tuned_ranger$predict_newdata(newdata = new_data)
-# predictions_untuned <- untuned_ranger$predict_newdata(newdata = new_data)
-#
-# # Disconnect
-# spark_disconnect(sc)

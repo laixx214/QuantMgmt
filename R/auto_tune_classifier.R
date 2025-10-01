@@ -14,13 +14,12 @@
 #' @param cores_to_use Number of cores to use for parallel processing (default: detectCores() - 1)
 #' @param model_tuning Character indicating which models to return: "untuned", "tuned", or "all" (default: "all")
 #' @param verbose Logical indicating whether to enable verbose output for parallel processing
-#'                         diagnostics (default: FALSE). When TRUE, enables future.debug output.
-#' @param seed Integer seed for reproducibility (default: NULL). When set, ensures reproducible results.
+#'                         diagnostics (default: TRUE). When TRUE, enables future.debug output.
+#' @param seed Integer seed for reproducibility (default: 123). When set, ensures reproducible results.
 #'
-#' @return Depends on model_tuning parameter:
-#'         - "all": List with 'tuned' and 'untuned' elements
-#'         - "tuned": Named list of tuned learners only
-#'         - "untuned": Named list of untuned learners only
+#' @return List containing (structure depends on model_tuning parameter):
+#'   - tuned: List of tuned mlr3 learners (if model_tuning is "tuned" or "all")
+#'   - untuned: List of untuned mlr3 learners (if model_tuning is "untuned" or "all")
 #'
 #' @importFrom future plan multisession sequential
 #' @importFrom future.apply future_lapply
@@ -109,16 +108,16 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
     }
 
     required_fields <- c("learner", "measure")
-    for (alg_name in names(algorithms)) {
-        alg_spec <- algorithms[[alg_name]]
-        if (!is.list(alg_spec) || !all(required_fields %in% names(alg_spec))) {
-            stop(sprintf("Algorithm '%s' must contain 'learner' and 'measure' elements", alg_name))
+    for (algo_name in names(algorithms)) {
+        algo_spec <- algorithms[[algo_name]]
+        if (!is.list(algo_spec) || !all(required_fields %in% names(algo_spec))) {
+            stop(sprintf("Algorithm '%s' must contain 'learner' and 'measure' elements", algo_name))
         }
 
         # For tuned models, validate param_space is provided
         if (model_tuning %in% c("tuned", "all")) {
-            if (!"param_space" %in% names(alg_spec)) {
-                stop(sprintf("Algorithm '%s' missing 'param_space' field (required for tuned models)", alg_name))
+            if (!"param_space" %in% names(algo_spec)) {
+                stop(sprintf("Algorithm '%s' missing 'param_space' field (required for tuned models)", algo_name))
             }
         }
     }
@@ -134,7 +133,8 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
     task <- TaskClassif$new(
         id = "auto_tune_task",
         backend = task_data,
-        target = "target"
+        target = "target",
+        positive = .TARGET_POSITIVE
     )
 
     # Helper function to create learner with threading support
@@ -201,12 +201,12 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
     # Process untuned learners if needed
     if (model_tuning %in% c("untuned", "all")) {
         message("Training untuned learners...")
-        for (alg_name in names(algorithms)) {
-            alg_spec <- algorithms[[alg_name]]
-            message(paste("Training", alg_name, "with default parameters..."))
+        for (algo_name in names(algorithms)) {
+            algo_spec <- algorithms[[algo_name]]
+            message(paste("Training", algo_name, "with default parameters..."))
 
             # Create learner with default parameters
-            learner_untuned <- create_learner(alg_spec$learner, cores_to_use)
+            learner_untuned <- create_learner(algo_spec$learner, cores_to_use)
 
             # Train untuned learner with timing
             training_start <- Sys.time()
@@ -214,9 +214,9 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
             training_end <- Sys.time()
             training_duration <- as.numeric(difftime(training_end, training_start, units = "secs"))
 
-            untuned_learners[[alg_name]] <- learner_untuned
+            untuned_learners[[algo_name]] <- learner_untuned
 
-            message(paste("Completed training", alg_name, "with default parameters in",
+            message(paste("Completed training", algo_name, "with default parameters in",
                          round(training_duration, 2), "seconds"))
         }
     }
@@ -224,27 +224,27 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
     # Process tuned learners if needed
     if (model_tuning %in% c("tuned", "all")) {
         message("Training tuned learners...")
-        for (alg_name in names(algorithms)) {
-            alg_spec <- algorithms[[alg_name]]
-            message(paste("Tuning", alg_name, "..."))
+        for (algo_name in names(algorithms)) {
+            algo_spec <- algorithms[[algo_name]]
+            message(paste("Tuning", algo_name, "..."))
 
             # Create learner
-            learner_tuned <- create_learner(alg_spec$learner, cores_to_use)
+            learner_tuned <- create_learner(algo_spec$learner, cores_to_use)
 
             # Tune the learner (training happens within tuning process)
-            learner_tuned <- tune_learner(learner_tuned, alg_spec$param_space, task, alg_spec$measure)
+            learner_tuned <- tune_learner(learner_tuned, algo_spec$param_space, task, algo_spec$measure)
 
             # Train the tuned learner on the full task
-            message(paste("Training", alg_name, "with optimal parameters on full dataset..."))
+            message(paste("Training", algo_name, "with optimal parameters on full dataset..."))
             training_start <- Sys.time()
             learner_tuned$train(task)
             training_end <- Sys.time()
             training_duration <- as.numeric(difftime(training_end, training_start, units = "secs"))
-            message(paste("Completed training", alg_name, "in", round(training_duration, 2), "seconds"))
+            message(paste("Completed training", algo_name, "in", round(training_duration, 2), "seconds"))
 
-            tuned_learners[[alg_name]] <- learner_tuned
+            tuned_learners[[algo_name]] <- learner_tuned
 
-            message(paste("Completed tuning", alg_name))
+            message(paste("Completed tuning", algo_name))
         }
     }
 
@@ -254,7 +254,8 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
     if (model_tuning %in% c("untuned", "all")) result$untuned <- untuned_learners
 
     message("Model training completed successfully!")
-    return(result)
+
+    structure(result, class = "mlr3_ensemble")
 }
 
 #' Get Default Search Spaces for Common Algorithms
