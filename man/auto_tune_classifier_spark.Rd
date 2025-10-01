@@ -26,7 +26,8 @@ auto_tune_classifier_spark(
 \item{algorithms}{Named list where each element contains:
 - learner: mlr3 learner ID (e.g., "classif.ranger", "classif.xgboost")
 - param_space: paradox::ParamSet defining search space (optional if model_tuning = "untuned")
-- measure: mlr3 measure ID (e.g., "classif.auc", "classif.prauc")}
+- measure: mlr3 measure ID (e.g., "classif.auc", "classif.prauc")
+- predict_type: prediction type - "prob" for probabilities or "response" for class labels (default: "prob")}
 
 \item{cv_folds}{Number of cross-validation folds for tuning (default: 5)}
 
@@ -68,7 +69,8 @@ algorithms <- list(
       mtry.ratio = paradox::p_dbl(0.1, 1),
       min.node.size = paradox::p_int(1, 10)
     ),
-    measure = "classif.auc"
+    measure = "classif.auc",
+    predict_type = "prob"  # Required for classif.auc
   )
 )
 

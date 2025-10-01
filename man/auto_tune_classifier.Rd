@@ -24,7 +24,8 @@ auto_tune_classifier(
 \item{algorithms}{Named list of algorithms to tune. Each element should contain:
 - learner: mlr3 learner ID (e.g., "classif.ranger", "classif.xgboost")
 - param_space: paradox::ParamSet defining search space (optional if model_tuning = "untuned")
-- measure: tuning criterion (e.g., "classif.prauc", "classif.auc")}
+- measure: tuning criterion (e.g., "classif.prauc", "classif.auc")
+- predict_type: prediction type - "prob" for probabilities or "response" for class labels (default: "prob")}
 
 \item{cv_folds}{Number of cross-validation folds for tuning (default: 2)}
 
@@ -59,7 +60,8 @@ algorithms <- list(
       mtry.ratio = paradox::p_dbl(0.1, 1),
       min.node.size = paradox::p_int(1, 10)
     ),
-    measure = "classif.prauc"
+    measure = "classif.prauc",
+    predict_type = "prob"  # Required for classif.prauc
   ),
   xgboost = list(
     learner = "classif.xgboost",
@@ -68,7 +70,8 @@ algorithms <- list(
       eta = paradox::p_dbl(0.01, 0.3, logscale = TRUE),
       max_depth = paradox::p_int(3, 8)
     ),
-    measure = "classif.auc"
+    measure = "classif.auc",
+    predict_type = "prob"  # Required for classif.auc
   )
 )
 
