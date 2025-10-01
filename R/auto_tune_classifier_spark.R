@@ -27,6 +27,7 @@
 #' @importFrom paradox ps p_int p_dbl generate_design_random
 #' @importFrom jsonlite toJSON fromJSON
 #' @importFrom DBI dbRemoveTable
+#' @importFrom dplyr %>% collect
 #'
 #' @export
 #'

@@ -12,8 +12,8 @@ auto_tune_classifier(
   n_evals = 15,
   cores_to_use = max(1, detectCores() - 1),
   model_tuning = "all",
-  verbose_parallel = FALSE,
-  seed = NULL
+  verbose = TRUE,
+  seed = 123
 )
 }
 \arguments{
@@ -21,10 +21,10 @@ auto_tune_classifier(
 
 \item{Y_train}{Vector of training outcomes (binary classification: 0/1 or logical)}
 
-\item{algorithms}{Named list of algorithms to tune. Names must be "ranger" and/or "xgboost".
-Each element should contain:
-- param_space: ps() object defining search space
-- measure: tuning criterion (e.g., "classif.prauc")}
+\item{algorithms}{Named list of algorithms to tune. Each element should contain:
+- learner: mlr3 learner ID (e.g., "classif.ranger", "classif.xgboost")
+- param_space: paradox::ParamSet defining search space (optional if model_tuning = "untuned")
+- measure: tuning criterion (e.g., "classif.prauc", "classif.auc")}
 
 \item{cv_folds}{Number of cross-validation folds for tuning (default: 2)}
 
@@ -34,16 +34,15 @@ Each element should contain:
 
 \item{model_tuning}{Character indicating which models to return: "untuned", "tuned", or "all" (default: "all")}
 
-\item{verbose_parallel}{Logical indicating whether to enable verbose output for parallel processing
-diagnostics (default: FALSE). When TRUE, enables future.debug output.}
+\item{verbose}{Logical indicating whether to enable verbose output for parallel processing
+diagnostics (default: TRUE). When TRUE, enables future.debug output.}
 
-\item{seed}{Integer seed for reproducibility (default: NULL). When set, ensures reproducible results.}
+\item{seed}{Integer seed for reproducibility (default: 123). When set, ensures reproducible results.}
 }
 \value{
-Depends on model_tuning parameter:
-        - "all": List with 'tuned' and 'untuned' elements
-        - "tuned": Named list of tuned learners only
-        - "untuned": Named list of untuned learners only
+List containing (structure depends on model_tuning parameter):
+  - tuned: List of tuned mlr3 learners (if model_tuning is "tuned" or "all")
+  - untuned: List of untuned mlr3 learners (if model_tuning is "untuned" or "all")
 }
 \description{
 This function automatically tunes ranger (Random Forest) and/or xgboost algorithms
@@ -51,9 +50,10 @@ using specified search spaces and optimization criteria for binary classificatio
 }
 \examples{
 \dontrun{
-# Define search spaces
+# Define search spaces with explicit learner specification
 algorithms <- list(
   ranger = list(
+    learner = "classif.ranger",
     param_space = paradox::ps(
       num.trees = paradox::p_int(100, 500),
       mtry.ratio = paradox::p_dbl(0.1, 1),
@@ -62,6 +62,7 @@ algorithms <- list(
     measure = "classif.prauc"
   ),
   xgboost = list(
+    learner = "classif.xgboost",
     param_space = paradox::ps(
       nrounds = paradox::p_int(50, 200),
       eta = paradox::p_dbl(0.01, 0.3, logscale = TRUE),

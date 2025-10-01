@@ -7,36 +7,36 @@
 auto_tune_classifier_spark(
   sc,
   X_train,
-  y_train,
+  Y_train,
   algorithms,
   cv_folds = 5,
   n_evals = 50,
   model_tuning = "all",
-  seed = 42,
+  seed = 123,
   verbose = TRUE
 )
 }
 \arguments{
 \item{sc}{Active Spark connection from spark_connect()}
 
-\item{X_train}{Training features data.frame}
+\item{X_train}{Training features data.frame or matrix}
 
-\item{y_train}{Training target vector (will be converted to factor)}
+\item{Y_train}{Training target vector (binary classification: 0/1 or logical, will be converted to factor)}
 
 \item{algorithms}{Named list where each element contains:
 - learner: mlr3 learner ID (e.g., "classif.ranger", "classif.xgboost")
 - param_space: paradox::ParamSet defining search space (optional if model_tuning = "untuned")
 - measure: mlr3 measure ID (e.g., "classif.auc", "classif.prauc")}
 
-\item{cv_folds}{Number of cross-validation folds (default: 5)}
+\item{cv_folds}{Number of cross-validation folds for tuning (default: 5)}
 
 \item{n_evals}{Number of random search iterations per algorithm (default: 50)}
 
 \item{model_tuning}{Character indicating which models to return: "untuned", "tuned", or "all" (default: "all")}
 
-\item{seed}{Random seed for reproducibility (default: 42)}
+\item{seed}{Integer seed for reproducibility (default: 123). When set, ensures reproducible results.}
 
-\item{verbose}{Print progress messages (default: TRUE)}
+\item{verbose}{Logical indicating whether to print progress messages (default: TRUE)}
 }
 \value{
 List containing:
@@ -48,4 +48,51 @@ List containing:
 \description{
 This function distributes hyperparameter search across Spark executors using spark_apply,
 maximizing cluster utilization for large-scale tuning operations.
+}
+\examples{
+\dontrun{
+# Connect to Spark cluster
+library(sparklyr)
+sc <- spark_connect(method = "databricks")
+
+# Prepare data
+X_train <- iris[, 1:4]
+Y_train <- ifelse(iris$Species == "setosa", 1, 0)
+
+# Define algorithms
+algorithms <- list(
+  ranger = list(
+    learner = "classif.ranger",
+    param_space = paradox::ps(
+      num.trees = paradox::p_int(100, 500),
+      mtry.ratio = paradox::p_dbl(0.1, 1),
+      min.node.size = paradox::p_int(1, 10)
+    ),
+    measure = "classif.auc"
+  )
+)
+
+# Train models
+results <- auto_tune_classifier_spark(
+  sc = sc,
+  X_train = X_train,
+  Y_train = Y_train,
+  algorithms = algorithms,
+  cv_folds = 5,
+  n_evals = 50,
+  model_tuning = "all",
+  seed = 123
+)
+
+# Access models
+tuned_model <- results$tuned$ranger
+untuned_model <- results$untuned$ranger
+
+# Make predictions
+predictions <- tuned_model$predict_newdata(newdata = iris[1:10, 1:4])
+
+# Disconnect
+spark_disconnect(sc)
+}
+
 }

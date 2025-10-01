@@ -2,7 +2,7 @@
 % Please edit documentation in R/auto_tune_classifier.R
 \name{get_default_search_space}
 \alias{get_default_search_space}
-\title{Get Default Search Spaces for Supported Algorithms}
+\title{Get Default Search Spaces for Common Algorithms}
 \usage{
 get_default_search_space(algorithm)
 }
@@ -13,12 +13,23 @@ get_default_search_space(algorithm)
 ps() object with default search space
 }
 \description{
-Helper function to get default parameter search spaces for ranger and xgboost
+Helper function to get default parameter search spaces for ranger and xgboost.
+These can be used with any mlr3 learner that supports these parameters.
 }
 \examples{
 \dontrun{
+# Get default search spaces
 ranger_space <- get_default_search_space("ranger")
 xgboost_space <- get_default_search_space("xgboost")
+
+# Use in algorithms list
+algorithms <- list(
+  my_ranger = list(
+    learner = "classif.ranger",
+    param_space = ranger_space,
+    measure = "classif.auc"
+  )
+)
 }
 
 }
