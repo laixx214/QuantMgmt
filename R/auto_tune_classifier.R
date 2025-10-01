@@ -234,6 +234,14 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
             # Tune the learner (training happens within tuning process)
             learner_tuned <- tune_learner(learner_tuned, alg_spec$param_space, task, alg_spec$measure)
 
+            # Train the tuned learner on the full task
+            message(paste("Training", alg_name, "with optimal parameters on full dataset..."))
+            training_start <- Sys.time()
+            learner_tuned$train(task)
+            training_end <- Sys.time()
+            training_duration <- as.numeric(difftime(training_end, training_start, units = "secs"))
+            message(paste("Completed training", alg_name, "in", round(training_duration, 2), "seconds"))
+
             tuned_learners[[alg_name]] <- learner_tuned
 
             message(paste("Completed tuning", alg_name))

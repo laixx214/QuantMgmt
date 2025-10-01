@@ -5,30 +5,6 @@ library(mlr3learners)
 library(paradox)
 library(jsonlite)
 
-#' Get Default Search Space for Algorithm
-#'
-#' @param algorithm Algorithm name ("ranger" or "xgboost")
-#' @return paradox ParamSet with default search space
-get_default_search_space <- function(algorithm) {
-  if (algorithm == "ranger") {
-    return(ps(
-      num.trees = p_int(100, 500),
-      mtry.ratio = p_dbl(0.1, 1),
-      min.node.size = p_int(1, 10)
-    ))
-  } else if (algorithm == "xgboost") {
-    return(ps(
-      nrounds = p_int(50, 200),
-      eta = p_dbl(0.01, 0.3, logscale = TRUE),
-      max_depth = p_int(3, 8),
-      subsample = p_dbl(0.5, 1),
-      colsample_bytree = p_dbl(0.5, 1)
-    ))
-  } else {
-    stop("Algorithm must be 'ranger' or 'xgboost'")
-  }
-}
-
 
 #' Automatically Tune and Train Multiple Classification Models with Spark Distribution
 #'
@@ -55,7 +31,7 @@ get_default_search_space <- function(algorithm) {
 #'   - cluster_info: Information about the cluster configuration
 #'
 #' @export
-auto_tune_classifier <- function(sc,
+auto_tune_classifier_spark <- function(sc,
                                  X_train,
                                  y_train,
                                  algorithms,
