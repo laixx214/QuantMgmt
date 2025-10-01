@@ -16,6 +16,8 @@
 #' @param spark_connection Optional sparklyr connection object for distributed processing. If provided,
 #'                        parameter search evaluations will be distributed across Spark executors.
 #'                        Defaults to 18 executors with 8 cores each if configuration cannot be detected.
+#' @param verbose_parallel Logical indicating whether to enable verbose output for parallel processing
+#'                         diagnostics (default: FALSE). When TRUE, enables future.debug output.
 #'
 #' @return Depends on model_tuning parameter:
 #'         - "all": List with 'tuned' and 'untuned' elements
@@ -62,7 +64,14 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
                               cv_folds = 2, n_evals = 15,
                               cores_to_use = max(1, detectCores() - 1),
                               model_tuning = "all",
-                              spark_connection = NULL) {
+                              spark_connection = NULL,
+                              verbose_parallel = FALSE) {
+
+    # Enable verbose parallel diagnostics if requested
+    if (verbose_parallel) {
+        options(future.debug = TRUE)
+        message("Verbose parallel processing diagnostics enabled")
+    }
 
     # Input validation
     X_train <- validate_feature_matrix(X_train, "X_train", allow_na = FALSE)
@@ -194,6 +203,10 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
             # Setup future plan to use multiple sessions
             # This distributes work across available Spark executors
             plan(multisession, workers = min(n_executors, n_evals))
+
+            # Diagnostic: Verify future plan is active
+            message(paste("Future plan:", class(future::plan())[1]))
+            message(paste("Number of workers:", future::nbrOfWorkers()))
         }
 
         # Create tuning instance (works for both distributed and sequential)
@@ -208,7 +221,14 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
 
         # Use random search (mlr3 automatically uses future backend if configured)
         tuner <- tnr("random_search")
+
+        # Time the tuning process
+        message("Starting hyperparameter tuning...")
+        tuning_start <- Sys.time()
         tuner$optimize(instance)
+        tuning_end <- Sys.time()
+        tuning_duration <- as.numeric(difftime(tuning_end, tuning_start, units = "secs"))
+        message(paste("Tuning completed in", round(tuning_duration, 2), "seconds"))
 
         # Reset to sequential processing if using Spark
         if (use_spark_distributed) {
@@ -232,11 +252,16 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
             # Create learner with default parameters
             learner_untuned <- create_learner(alg_name, cores_to_use, set_defaults = TRUE)
 
-            # Train untuned learner
+            # Train untuned learner with timing
+            training_start <- Sys.time()
             learner_untuned$train(task)
+            training_end <- Sys.time()
+            training_duration <- as.numeric(difftime(training_end, training_start, units = "secs"))
+
             untuned_learners[[alg_name]] <- learner_untuned
 
-            message(paste("Completed training", alg_name, "with default parameters"))
+            message(paste("Completed training", alg_name, "with default parameters in",
+                         round(training_duration, 2), "seconds"))
         }
     }
 
@@ -252,10 +277,17 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
 
             # Tune and train the learner
             learner_tuned <- tune_learner(learner_tuned, alg_spec$param_space, task, alg_spec$measure)
+
+            # Train with timing
+            training_start <- Sys.time()
             learner_tuned$train(task)
+            training_end <- Sys.time()
+            training_duration <- as.numeric(difftime(training_end, training_start, units = "secs"))
+
             tuned_learners[[alg_name]] <- learner_tuned
 
-            message(paste("Completed tuning", alg_name))
+            message(paste("Completed tuning", alg_name, "- Final training took",
+                         round(training_duration, 2), "seconds"))
         }
     }
 
