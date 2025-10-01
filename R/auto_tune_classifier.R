@@ -5,15 +5,15 @@
 #'
 #' @param X_train Matrix or data frame of training features
 #' @param Y_train Vector of training outcomes (binary classification: 0/1 or logical)
-#' @param algorithms Named list of algorithms to tune. Names must be "ranger" and/or "xgboost".
-#'                  Each element should contain:
-#'                  - param_space: ps() object defining search space
-#'                  - measure: tuning criterion (e.g., "classif.prauc")
+#' @param algorithms Named list of algorithms to tune. Each element should contain:
+#'                  - learner: mlr3 learner ID (e.g., "classif.ranger", "classif.xgboost")
+#'                  - param_space: paradox::ParamSet defining search space (optional if model_tuning = "untuned")
+#'                  - measure: tuning criterion (e.g., "classif.prauc", "classif.auc")
 #' @param cv_folds Number of cross-validation folds for tuning (default: 2)
 #' @param n_evals Number of parameter evaluations for tuning (default: 15)
 #' @param cores_to_use Number of cores to use for parallel processing (default: detectCores() - 1)
 #' @param model_tuning Character indicating which models to return: "untuned", "tuned", or "all" (default: "all")
-#' @param verbose_parallel Logical indicating whether to enable verbose output for parallel processing
+#' @param verbose Logical indicating whether to enable verbose output for parallel processing
 #'                         diagnostics (default: FALSE). When TRUE, enables future.debug output.
 #' @param seed Integer seed for reproducibility (default: NULL). When set, ensures reproducible results.
 #'
@@ -34,9 +34,10 @@
 #'
 #' @examples
 #' \dontrun{
-#' # Define search spaces
+#' # Define search spaces with explicit learner specification
 #' algorithms <- list(
 #'   ranger = list(
+#'     learner = "classif.ranger",
 #'     param_space = paradox::ps(
 #'       num.trees = paradox::p_int(100, 500),
 #'       mtry.ratio = paradox::p_dbl(0.1, 1),
@@ -45,6 +46,7 @@
 #'     measure = "classif.prauc"
 #'   ),
 #'   xgboost = list(
+#'     learner = "classif.xgboost",
 #'     param_space = paradox::ps(
 #'       nrounds = paradox::p_int(50, 200),
 #'       eta = paradox::p_dbl(0.01, 0.3, logscale = TRUE),
@@ -62,8 +64,8 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
                               cv_folds = 2, n_evals = 15,
                               cores_to_use = max(1, detectCores() - 1),
                               model_tuning = "all",
-                              verbose_parallel = FALSE,
-                              seed = NULL) {
+                              verbose = TRUE,
+                              seed = 123) {
 
     # Set seed for reproducibility if provided
     if (!is.null(seed)) {
@@ -75,7 +77,7 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
     }
 
     # Enable verbose parallel diagnostics if requested
-    if (verbose_parallel) {
+    if (verbose) {
         options(future.debug = TRUE)
         message("Verbose parallel processing diagnostics enabled")
     }
@@ -84,19 +86,6 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
     X_train <- validate_feature_matrix(X_train, "X_train", allow_na = FALSE)
     Y_train <- validate_binary_outcome(Y_train, "Y_train")
     validate_matching_dimensions(X_train, Y_train, "X_train", "Y_train")
-
-    if (!is.list(algorithms) || is.null(names(algorithms))) {
-        stop("algorithms must be a named list")
-    }
-
-    if (length(algorithms) == 0) {
-        stop("algorithms list cannot be empty")
-    }
-
-    valid_algorithms <- c("ranger", "xgboost")
-    if (!all(names(algorithms) %in% valid_algorithms)) {
-        stop(paste("Algorithm names must be from:", paste(valid_algorithms, collapse = ", ")))
-    }
 
     # Validate model_tuning parameter
     valid_tuning_options <- c("untuned", "tuned", "all")
@@ -114,16 +103,28 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
         stop("n_evals must be a single positive numeric value")
     }
 
-    # Setup parallel processing for local execution
-    message(paste("Using local parallel processing with", cores_to_use, "cores"))
+    # Validate algorithms
+    if (!is.list(algorithms) || is.null(names(algorithms)) || length(algorithms) == 0) {
+        stop("algorithms must be a named list with at least one algorithm specification")
+    }
 
-    # Validate each algorithm specification
+    required_fields <- c("learner", "measure")
     for (alg_name in names(algorithms)) {
         alg_spec <- algorithms[[alg_name]]
-        if (!is.list(alg_spec) || !all(c("param_space", "measure") %in% names(alg_spec))) {
-            stop(paste("Each algorithm must contain 'param_space' and 'measure' elements. Error in:", alg_name))
+        if (!is.list(alg_spec) || !all(required_fields %in% names(alg_spec))) {
+            stop(sprintf("Algorithm '%s' must contain 'learner' and 'measure' elements", alg_name))
+        }
+
+        # For tuned models, validate param_space is provided
+        if (model_tuning %in% c("tuned", "all")) {
+            if (!"param_space" %in% names(alg_spec)) {
+                stop(sprintf("Algorithm '%s' missing 'param_space' field (required for tuned models)", alg_name))
+            }
         }
     }
+
+    # Setup parallel processing for local execution
+    message(paste("Using local parallel processing with", cores_to_use, "cores"))
 
     # Create task
     task_data <- data.frame(X_train)
@@ -136,19 +137,17 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
         target = "target"
     )
 
-    # Helper function to create learner
-    create_learner <- function(alg_name, cores, set_defaults = FALSE) {
-        if (alg_name == "ranger") {
-            learner <- lrn("classif.ranger", predict_type = "prob", num.threads = cores)
-            if (set_defaults) {
-                learner$param_set$values$num.trees <- 500
-            }
-        } else if (alg_name == "xgboost") {
-            learner <- lrn("classif.xgboost", predict_type = "prob", nthread = cores)
-            if (set_defaults) {
-                learner$param_set$values$nrounds <- 100
-            }
+    # Helper function to create learner with threading support
+    create_learner <- function(learner_id, cores) {
+        learner <- lrn(learner_id, predict_type = "prob")
+
+        # Set threading parameters based on learner type
+        if (grepl("ranger", learner_id, fixed = TRUE)) {
+            learner$param_set$values$num.threads <- cores
+        } else if (grepl("xgboost", learner_id, fixed = TRUE)) {
+            learner$param_set$values$nthread <- cores
         }
+
         return(learner)
     }
 
@@ -162,7 +161,7 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
         plan(multisession, workers = n_workers)
 
         # Diagnostic: Verify future plan is active
-        if (verbose_parallel) {
+        if (verbose) {
             message(paste("Future plan:", class(future::plan())[1]))
             message(paste("Number of workers:", future::nbrOfWorkers()))
         }
@@ -203,10 +202,11 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
     if (model_tuning %in% c("untuned", "all")) {
         message("Training untuned learners...")
         for (alg_name in names(algorithms)) {
+            alg_spec <- algorithms[[alg_name]]
             message(paste("Training", alg_name, "with default parameters..."))
 
             # Create learner with default parameters
-            learner_untuned <- create_learner(alg_name, cores_to_use, set_defaults = TRUE)
+            learner_untuned <- create_learner(alg_spec$learner, cores_to_use)
 
             # Train untuned learner with timing
             training_start <- Sys.time()
@@ -229,7 +229,7 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
             message(paste("Tuning", alg_name, "..."))
 
             # Create learner
-            learner_tuned <- create_learner(alg_name, cores_to_use, set_defaults = FALSE)
+            learner_tuned <- create_learner(alg_spec$learner, cores_to_use)
 
             # Tune the learner (training happens within tuning process)
             learner_tuned <- tune_learner(learner_tuned, alg_spec$param_space, task, alg_spec$measure)
@@ -257,9 +257,10 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
     return(result)
 }
 
-#' Get Default Search Spaces for Supported Algorithms
+#' Get Default Search Spaces for Common Algorithms
 #'
-#' Helper function to get default parameter search spaces for ranger and xgboost
+#' Helper function to get default parameter search spaces for ranger and xgboost.
+#' These can be used with any mlr3 learner that supports these parameters.
 #'
 #' @param algorithm Algorithm name ("ranger" or "xgboost")
 #' @return ps() object with default search space
@@ -270,8 +271,18 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
 #'
 #' @examples
 #' \dontrun{
+#' # Get default search spaces
 #' ranger_space <- get_default_search_space("ranger")
 #' xgboost_space <- get_default_search_space("xgboost")
+#'
+#' # Use in algorithms list
+#' algorithms <- list(
+#'   my_ranger = list(
+#'     learner = "classif.ranger",
+#'     param_space = ranger_space,
+#'     measure = "classif.auc"
+#'   )
+#' )
 #' }
 #'
 get_default_search_space <- function(algorithm) {
