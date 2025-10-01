@@ -15,6 +15,7 @@
 #' @param model_tuning Character indicating which models to return: "untuned", "tuned", or "all" (default: "all")
 #' @param verbose_parallel Logical indicating whether to enable verbose output for parallel processing
 #'                         diagnostics (default: FALSE). When TRUE, enables future.debug output.
+#' @param seed Integer seed for reproducibility (default: NULL). When set, ensures reproducible results.
 #'
 #' @return Depends on model_tuning parameter:
 #'         - "all": List with 'tuned' and 'untuned' elements
@@ -54,14 +55,24 @@
 #' )
 #'
 #' # Tune algorithms
-#' results <- auto_tune_classifier(X_train, Y_train, algorithms)
+#' results <- auto_tune_classifier(X_train, Y_train, algorithms, seed = 123)
 #' }
 #'
 auto_tune_classifier <- function(X_train, Y_train, algorithms,
                               cv_folds = 2, n_evals = 15,
                               cores_to_use = max(1, detectCores() - 1),
                               model_tuning = "all",
-                              verbose_parallel = FALSE) {
+                              verbose_parallel = FALSE,
+                              seed = NULL) {
+
+    # Set seed for reproducibility if provided
+    if (!is.null(seed)) {
+        if (!is.numeric(seed) || length(seed) != 1) {
+            stop("seed must be a single numeric value")
+        }
+        set.seed(seed)
+        message(paste("Random seed set to:", seed))
+    }
 
     # Enable verbose parallel diagnostics if requested
     if (verbose_parallel) {
@@ -112,13 +123,6 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
         if (!is.list(alg_spec) || !all(c("param_space", "measure") %in% names(alg_spec))) {
             stop(paste("Each algorithm must contain 'param_space' and 'measure' elements. Error in:", alg_name))
         }
-
-        # Validate measure
-        valid_measures <- c("classif.acc", "classif.auc", "classif.prauc",
-                           "classif.f1", "classif.precision", "classif.recall", "classif.fbeta")
-        if (!alg_spec$measure %in% valid_measures) {
-            stop(paste("Measure must be one of:", paste(valid_measures, collapse = ", "), ". Error in:", alg_name))
-        }
     }
 
     # Create task
@@ -158,8 +162,10 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
         plan(multisession, workers = n_workers)
 
         # Diagnostic: Verify future plan is active
-        message(paste("Future plan:", class(future::plan())[1]))
-        message(paste("Number of workers:", future::nbrOfWorkers()))
+        if (verbose_parallel) {
+            message(paste("Future plan:", class(future::plan())[1]))
+            message(paste("Number of workers:", future::nbrOfWorkers()))
+        }
 
         # Create tuning instance
         instance <- ti(
@@ -225,41 +231,21 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
             # Create learner
             learner_tuned <- create_learner(alg_name, cores_to_use, set_defaults = FALSE)
 
-            # Tune and train the learner
+            # Tune the learner (training happens within tuning process)
             learner_tuned <- tune_learner(learner_tuned, alg_spec$param_space, task, alg_spec$measure)
-
-            # Train with timing
-            training_start <- Sys.time()
-            learner_tuned$train(task)
-            training_end <- Sys.time()
-            training_duration <- as.numeric(difftime(training_end, training_start, units = "secs"))
 
             tuned_learners[[alg_name]] <- learner_tuned
 
-            message(paste("Completed tuning", alg_name, "- Final training took",
-                         round(training_duration, 2), "seconds"))
+            message(paste("Completed tuning", alg_name))
         }
     }
 
     # Return results based on model_tuning parameter
-    if (model_tuning == "tuned") {
-        result <- list(
-            tuned = tuned_learners
-        )
-        message("Tuned model training completed successfully!")
-    } else if (model_tuning == "untuned") {
-        result <- list(
-            untuned = untuned_learners
-        )
-        message("Untuned model training completed successfully!")
-    } else {  # model_tuning == "all"
-        result <- list(
-            tuned = tuned_learners,
-            untuned = untuned_learners
-        )
-        message("Model training completed successfully!")
-    }
+    result <- list()
+    if (model_tuning %in% c("tuned", "all")) result$tuned <- tuned_learners
+    if (model_tuning %in% c("untuned", "all")) result$untuned <- untuned_learners
 
+    message("Model training completed successfully!")
     return(result)
 }
 
