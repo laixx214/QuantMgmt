@@ -13,9 +13,6 @@
 #' @param n_evals Number of parameter evaluations for tuning (default: 15)
 #' @param cores_to_use Number of cores to use for parallel processing (default: detectCores() - 1)
 #' @param model_tuning Character indicating which models to return: "untuned", "tuned", or "all" (default: "all")
-#' @param spark_connection Optional sparklyr connection object for distributed processing. If provided,
-#'                        parameter search evaluations will be distributed across Spark executors.
-#'                        Defaults to 18 executors with 8 cores each if configuration cannot be detected.
 #' @param verbose_parallel Logical indicating whether to enable verbose output for parallel processing
 #'                         diagnostics (default: FALSE). When TRUE, enables future.debug output.
 #'
@@ -64,7 +61,6 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
                               cv_folds = 2, n_evals = 15,
                               cores_to_use = max(1, detectCores() - 1),
                               model_tuning = "all",
-                              spark_connection = NULL,
                               verbose_parallel = FALSE) {
 
     # Enable verbose parallel diagnostics if requested
@@ -107,47 +103,8 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
         stop("n_evals must be a single positive numeric value")
     }
 
-    # Detect Spark cluster configuration
-    use_spark_distributed <- FALSE
-    n_executors <- 18  # Default
-    executor_cores <- 8  # Default
-
-    if (!is.null(spark_connection)) {
-        use_spark_distributed <- TRUE
-
-        # Try to get actual cluster configuration
-        tryCatch({
-            spark_conf <- sparklyr::spark_context_config(spark_connection)
-
-            # Try to get number of executors
-            if (!is.null(spark_conf$spark.executor.instances)) {
-                n_executors <- as.integer(spark_conf$spark.executor.instances)
-            } else if (!is.null(spark_conf$`spark.executor.instances`)) {
-                n_executors <- as.integer(spark_conf$`spark.executor.instances`)
-            }
-
-            # Try to get cores per executor
-            if (!is.null(spark_conf$spark.executor.cores)) {
-                executor_cores <- as.integer(spark_conf$spark.executor.cores)
-            } else if (!is.null(spark_conf$`spark.executor.cores`)) {
-                executor_cores <- as.integer(spark_conf$`spark.executor.cores`)
-            }
-
-            message(paste("Detected Spark cluster configuration:"))
-            message(paste("  Executors:", n_executors))
-            message(paste("  Cores per executor:", executor_cores))
-            message(paste("  Total cluster cores:", n_executors * executor_cores))
-        }, error = function(e) {
-            message("Could not detect Spark configuration, using defaults:")
-            message(paste("  Executors:", n_executors))
-            message(paste("  Cores per executor:", executor_cores))
-            message(paste("  Total cluster cores:", n_executors * executor_cores))
-        })
-
-        # Override cores_to_use for individual model training
-        cores_to_use <- executor_cores
-        message(paste("Each model will use", cores_to_use, "cores for internal parallelization"))
-    }
+    # Setup parallel processing for local execution
+    message(paste("Using local parallel processing with", cores_to_use, "cores"))
 
     # Validate each algorithm specification
     for (alg_name in names(algorithms)) {
@@ -191,25 +148,20 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
         return(learner)
     }
 
-    # Internal tuning function with Spark distribution
+    # Internal tuning function with local parallel processing
     tune_learner <- function(learner, param_space, task, measure_name) {
         measure <- msr(measure_name)
 
-        if (use_spark_distributed) {
-            # Use Spark to distribute parameter search evaluations
-            message(paste("Using Spark distributed tuning with", n_executors, "executors"))
-            message(paste("Distributing", n_evals, "parameter evaluations across cluster"))
+        # Setup future plan for local parallel processing
+        # Limit workers to avoid oversubscription
+        n_workers <- min(cores_to_use, n_evals)
+        plan(multisession, workers = n_workers)
 
-            # Setup future plan to use multiple sessions
-            # This distributes work across available Spark executors
-            plan(multisession, workers = min(n_executors, n_evals))
+        # Diagnostic: Verify future plan is active
+        message(paste("Future plan:", class(future::plan())[1]))
+        message(paste("Number of workers:", future::nbrOfWorkers()))
 
-            # Diagnostic: Verify future plan is active
-            message(paste("Future plan:", class(future::plan())[1]))
-            message(paste("Number of workers:", future::nbrOfWorkers()))
-        }
-
-        # Create tuning instance (works for both distributed and sequential)
+        # Create tuning instance
         instance <- ti(
             task = task,
             learner = learner,
@@ -230,10 +182,8 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
         tuning_duration <- as.numeric(difftime(tuning_end, tuning_start, units = "secs"))
         message(paste("Tuning completed in", round(tuning_duration, 2), "seconds"))
 
-        # Reset to sequential processing if using Spark
-        if (use_spark_distributed) {
-            plan(sequential)
-        }
+        # Reset to sequential processing
+        plan(sequential)
 
         learner$param_set$values <- instance$result_learner_param_vals
         return(learner)
