@@ -161,21 +161,17 @@ auto_tune_classifier_spark <- function(sc,
   }
   
   # ========== CLUSTER DETECTION ==========
-  if (verbose) cat("=== Detecting Cluster Configuration ===\n")
-  
   cluster_info <- detect_cluster_config(sc, verbose)
-  
+
   # ========== PREPARE DATA ==========
-  if (verbose) cat("\n=== Preparing Training Data ===\n")
-  
   # Prepare training data
   train_data <- data.frame(X_train)
   # Convert to factor with levels to match mlr3 expectations (consistent with non-Spark version)
   train_data$target <- factor(Y_train, levels = c(0, 1), labels = .TARGET_LEVELS)
-  
+
   if (verbose) {
-    cat(sprintf("Training samples: %s\n", format(nrow(train_data), big.mark = ",")))
-    cat(sprintf("Number of features: %d\n", ncol(X_train)))
+    message(sprintf("Training samples: %s, Features: %d",
+                    format(nrow(train_data), big.mark = ","), ncol(X_train)))
   }
   
   # Create mlr3 task
@@ -188,78 +184,72 @@ auto_tune_classifier_spark <- function(sc,
   
   # ========== TRAIN UNTUNED MODELS ==========
   untuned_learners <- NULL
-  
+
   if (model_tuning %in% c("untuned", "all")) {
-    if (verbose) cat("\n=== Training Untuned Models (Default Parameters) ===\n")
-    
+    if (verbose) message("Training untuned models...")
+
     untuned_learners <- list()
-    
+
     for (algo_name in names(algorithms)) {
-      if (verbose) cat(sprintf("\n--- Training untuned %s ---\n", toupper(algo_name)))
-      
+      if (verbose) message(paste("  Training", algo_name, "..."))
+
       algo_spec <- algorithms[[algo_name]]
       start_time <- Sys.time()
-      
+
       # Create learner with default parameters
       learner <- lrn(algo_spec$learner, predict_type = algo_spec$predict_type)
-      
+
       # Train model
       learner$train(task)
-      
-      end_time <- Sys.time()
-      
+
+      training_duration <- as.numeric(difftime(Sys.time(), start_time, units = "secs"))
+
       if (verbose) {
-        cat(sprintf("Training time: %.2f seconds\n", 
-                    as.numeric(difftime(end_time, start_time, units = "secs"))))
+        message(sprintf("  Completed in %.2f seconds", training_duration))
       }
-      
+
       untuned_learners[[algo_name]] <- learner
     }
-    
-    if (verbose) cat("\n=== Untuned Model Training Complete ===\n")
   }
   
   # ========== TRAIN TUNED MODELS ==========
   tuned_learners <- NULL
   tuning_results <- NULL
-  
+
   if (model_tuning %in% c("tuned", "all")) {
     # Broadcast training data to all executors
-    if (verbose) cat("\n=== Broadcasting Data to Executors ===\n")
-    train_broadcast <- sdf_copy_to(sc, train_data, "train_broadcast", 
-                                    overwrite = TRUE, 
+    train_broadcast <- sdf_copy_to(sc, train_data, "train_broadcast",
+                                    overwrite = TRUE,
                                     repartition = cluster_info$total_cores)
-    
-    if (verbose) cat("\n=== Training Tuned Models (Distributed Across Executors) ===\n")
+
+    if (verbose) message("Training tuned models...")
     
     tuned_learners <- list()
     tuning_results <- list()
     
     for (algo_name in names(algorithms)) {
-      if (verbose) cat(sprintf("\n--- Tuning %s ---\n", toupper(algo_name)))
-      
+      if (verbose) message(paste("  Tuning", algo_name, "..."))
+
       algo_spec <- algorithms[[algo_name]]
       start_time <- Sys.time()
-      
+
       # Generate random parameter combinations
       set.seed(seed)
       param_combos <- generate_param_combinations(algo_spec$param_space, n_evals)
-      
+
       # Create Spark DataFrame of parameter combinations
       param_df <- data.frame(
         param_id = seq_len(n_evals),
         param_json = sapply(param_combos, toJSON, auto_unbox = TRUE),
         stringsAsFactors = FALSE
       )
-      param_spark <- sdf_copy_to(sc, param_df, "params_temp", 
-                                  overwrite = TRUE, 
+      param_spark <- sdf_copy_to(sc, param_df, "params_temp",
+                                  overwrite = TRUE,
                                   repartition = cluster_info$total_cores)
-      
+
       if (verbose) {
-        cat(sprintf("Distributing %d parameter evaluations across %d cores\n", 
-                    n_evals, cluster_info$total_cores))
-        cat(sprintf("Each evaluation performs %d-fold CV\n", cv_folds))
-        cat(sprintf("Total CV fits: %d\n", n_evals * cv_folds))
+        message(sprintf("    Evaluating %d parameter sets (%d-fold CV) across %d cores",
+                        n_evals, cv_folds, cluster_info$total_cores))
       }
       
       # Distribute evaluation across executors using spark_apply
@@ -352,28 +342,27 @@ auto_tune_classifier_spark <- function(sc,
       if (any(!is.na(eval_results$error))) {
         n_errors <- sum(!is.na(eval_results$error))
         if (verbose) {
-          cat(sprintf("Warning: %d/%d parameter sets failed\n", n_errors, n_evals))
+          message(sprintf("    Warning: %d/%d parameter sets failed", n_errors, n_evals))
         }
       }
-      
+
       # Remove failed evaluations
       eval_results <- eval_results[!is.na(eval_results$score), ]
-      
+
       if (nrow(eval_results) == 0) {
         stop(sprintf("All parameter evaluations failed for %s", algo_name))
       }
-      
+
       # Find best parameters
       best_idx <- which.max(eval_results$score)
       best_params <- fromJSON(eval_results$param_json[best_idx])
       best_score <- eval_results$score[best_idx]
-      
+
+      tuning_duration <- as.numeric(difftime(end_time, start_time, units = "mins"))
+
       if (verbose) {
-        cat(sprintf("Best %s: %.4f\n", algo_spec$measure, best_score))
-        cat("Best parameters:\n")
-        print(best_params)
-        cat(sprintf("Training time: %.2f minutes\n", 
-                    as.numeric(difftime(end_time, start_time, units = "mins"))))
+        message(sprintf("    Best %s: %.4f (completed in %.2f minutes)",
+                        algo_spec$measure, best_score, tuning_duration))
       }
       
       # Train final model with best parameters
@@ -396,8 +385,6 @@ auto_tune_classifier_spark <- function(sc,
     
     # Cleanup broadcast table
     DBI::dbRemoveTable(sc, "train_broadcast")
-    
-    if (verbose) cat("\n=== Tuned Model Training Complete ===\n")
   }
   
   # ========== FORMAT RESULTS ==========
@@ -415,7 +402,7 @@ auto_tune_classifier_spark <- function(sc,
   # Always include cluster_info for Spark version
   result$cluster_info <- cluster_info
 
-  message("Model training completed successfully!")
+  if (verbose) message("Model training completed successfully!")
 
   structure(result, class = "mlr3_ensemble")
 }
@@ -484,13 +471,11 @@ detect_cluster_config <- function(sc, verbose = TRUE) {
       executor_memory = executor_memory,
       spark_version = spark_version(sc)
     )
-    
+
     if (verbose) {
-      cat(sprintf("Spark Version: %s\n", cluster_info$spark_version))
-      cat(sprintf("Number of Executors: %d\n", cluster_info$n_executors))
-      cat(sprintf("Cores per Executor: %d\n", cluster_info$cores_per_executor))
-      cat(sprintf("Total Available Cores: %d\n", cluster_info$total_cores))
-      cat(sprintf("Executor Memory: %s\n", cluster_info$executor_memory))
+      message(sprintf("Cluster: Spark %s, %d executors, %d cores/executor (%d total cores)",
+                      cluster_info$spark_version, cluster_info$n_executors,
+                      cluster_info$cores_per_executor, cluster_info$total_cores))
     }
     
     return(cluster_info)

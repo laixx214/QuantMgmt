@@ -75,13 +75,12 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
             stop("seed must be a single numeric value")
         }
         set.seed(seed)
-        message(paste("Random seed set to:", seed))
+        if (verbose) message(paste("Random seed set to:", seed))
     }
 
     # Enable verbose parallel diagnostics if requested
     if (verbose) {
         options(future.debug = TRUE)
-        message("Verbose parallel processing diagnostics enabled")
     }
 
     # Input validation
@@ -147,7 +146,7 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
     }
 
     # Setup parallel processing for local execution
-    message(paste("Using local parallel processing with", cores_to_use, "cores"))
+    if (verbose) message(paste("Using", cores_to_use, "cores for parallel processing"))
 
     # Create task
     task_data <- data.frame(X_train)
@@ -184,12 +183,6 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
         n_workers <- min(cores_to_use, n_evals)
         plan(multisession, workers = n_workers)
 
-        # Diagnostic: Verify future plan is active
-        if (verbose) {
-            message(paste("Future plan:", class(future::plan())[1]))
-            message(paste("Number of workers:", future::nbrOfWorkers()))
-        }
-
         # Create tuning instance
         instance <- ti(
             task = task,
@@ -204,12 +197,10 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
         tuner <- tnr("random_search")
 
         # Time the tuning process
-        message("Starting hyperparameter tuning...")
         tuning_start <- Sys.time()
         tuner$optimize(instance)
-        tuning_end <- Sys.time()
-        tuning_duration <- as.numeric(difftime(tuning_end, tuning_start, units = "secs"))
-        message(paste("Tuning completed in", round(tuning_duration, 2), "seconds"))
+        tuning_duration <- as.numeric(difftime(Sys.time(), tuning_start, units = "secs"))
+        if (verbose) message(paste("  Tuning completed in", round(tuning_duration, 2), "seconds"))
 
         # Reset to sequential processing
         plan(sequential)
@@ -224,10 +215,10 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
 
     # Process untuned learners if needed
     if (model_tuning %in% c("untuned", "all")) {
-        message("Training untuned learners...")
+        if (verbose) message("Training untuned learners...")
         for (algo_name in names(algorithms)) {
             algo_spec <- algorithms[[algo_name]]
-            message(paste("Training", algo_name, "with default parameters..."))
+            if (verbose) message(paste("  Training", algo_name, "..."))
 
             # Create learner with default parameters
             learner_untuned <- create_learner(algo_spec$learner, algo_spec$predict_type, cores_to_use)
@@ -235,22 +226,20 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
             # Train untuned learner with timing
             training_start <- Sys.time()
             learner_untuned$train(task)
-            training_end <- Sys.time()
-            training_duration <- as.numeric(difftime(training_end, training_start, units = "secs"))
+            training_duration <- as.numeric(difftime(Sys.time(), training_start, units = "secs"))
 
             untuned_learners[[algo_name]] <- learner_untuned
 
-            message(paste("Completed training", algo_name, "with default parameters in",
-                         round(training_duration, 2), "seconds"))
+            if (verbose) message(paste("  Completed in", round(training_duration, 2), "seconds"))
         }
     }
 
     # Process tuned learners if needed
     if (model_tuning %in% c("tuned", "all")) {
-        message("Training tuned learners...")
+        if (verbose) message("Training tuned learners...")
         for (algo_name in names(algorithms)) {
             algo_spec <- algorithms[[algo_name]]
-            message(paste("Tuning", algo_name, "..."))
+            if (verbose) message(paste("  Tuning", algo_name, "..."))
 
             # Create learner
             learner_tuned <- create_learner(algo_spec$learner, algo_spec$predict_type, cores_to_use)
@@ -259,16 +248,12 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
             learner_tuned <- tune_learner(learner_tuned, algo_spec$param_space, task, algo_spec$measure)
 
             # Train the tuned learner on the full task
-            message(paste("Training", algo_name, "with optimal parameters on full dataset..."))
             training_start <- Sys.time()
             learner_tuned$train(task)
-            training_end <- Sys.time()
-            training_duration <- as.numeric(difftime(training_end, training_start, units = "secs"))
-            message(paste("Completed training", algo_name, "in", round(training_duration, 2), "seconds"))
+            training_duration <- as.numeric(difftime(Sys.time(), training_start, units = "secs"))
+            if (verbose) message(paste("  Final training completed in", round(training_duration, 2), "seconds"))
 
             tuned_learners[[algo_name]] <- learner_tuned
-
-            message(paste("Completed tuning", algo_name))
         }
     }
 
@@ -277,7 +262,7 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
     if (model_tuning %in% c("tuned", "all")) result$tuned <- tuned_learners
     if (model_tuning %in% c("untuned", "all")) result$untuned <- untuned_learners
 
-    message("Model training completed successfully!")
+    if (verbose) message("Model training completed successfully!")
 
     structure(result, class = "mlr3_ensemble")
 }
