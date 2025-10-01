@@ -10,6 +10,7 @@
 #'   - learner: mlr3 learner ID (e.g., "classif.ranger", "classif.xgboost")
 #'   - param_space: paradox::ParamSet defining search space (optional if model_tuning = "untuned")
 #'   - measure: mlr3 measure ID (e.g., "classif.auc", "classif.prauc")
+#'   - predict_type: prediction type - "prob" for probabilities or "response" for class labels (default: "prob")
 #' @param cv_folds Number of cross-validation folds for tuning (default: 5)
 #' @param n_evals Number of random search iterations per algorithm (default: 50)
 #' @param model_tuning Character indicating which models to return: "untuned", "tuned", or "all" (default: "all")
@@ -50,7 +51,8 @@
 #'       mtry.ratio = paradox::p_dbl(0.1, 1),
 #'       min.node.size = paradox::p_int(1, 10)
 #'     ),
-#'     measure = "classif.auc"
+#'     measure = "classif.auc",
+#'     predict_type = "prob"  # Required for classif.auc
 #'   )
 #' )
 #'
@@ -135,6 +137,27 @@ auto_tune_classifier_spark <- function(sc,
         stop(sprintf("Algorithm '%s' missing 'param_space' field (required for tuned models)", algo_name))
       }
     }
+
+    # Set default predict_type if not provided
+    if (!"predict_type" %in% names(algo_spec)) {
+      algorithms[[algo_name]]$predict_type <- "prob"
+    }
+
+    # Validate predict_type
+    valid_predict_types <- c("prob", "response")
+    if (!algo_spec$predict_type %in% valid_predict_types) {
+      stop(sprintf("Algorithm '%s': predict_type must be one of: %s",
+                  algo_name, paste(valid_predict_types, collapse = ", ")))
+    }
+
+    # Validate predict_type is compatible with measure
+    prob_measures <- c("classif.auc", "classif.prauc", "classif.logloss", "classif.bbrier")
+    measure_name <- algo_spec$measure
+
+    if (measure_name %in% prob_measures && algo_spec$predict_type != "prob") {
+      stop(sprintf("Algorithm '%s': measure '%s' requires predict_type = 'prob'",
+                  algo_name, measure_name))
+    }
   }
   
   # ========== CLUSTER DETECTION ==========
@@ -178,7 +201,7 @@ auto_tune_classifier_spark <- function(sc,
       start_time <- Sys.time()
       
       # Create learner with default parameters
-      learner <- lrn(algo_spec$learner, predict_type = "prob")
+      learner <- lrn(algo_spec$learner, predict_type = algo_spec$predict_type)
       
       # Train model
       learner$train(task)
@@ -275,7 +298,7 @@ auto_tune_classifier_spark <- function(sc,
                 )
                 
                 # Create learner with parameters
-                learner <- lrn(context$learner_id, predict_type = "prob")
+                learner <- lrn(context$learner_id, predict_type = context$predict_type)
                 learner$param_set$values <- as.list(params)
                 
                 # Perform cross-validation
@@ -310,6 +333,7 @@ auto_tune_classifier_spark <- function(sc,
             train_data = train_data,
             learner_id = algo_spec$learner,
             measure_id = algo_spec$measure,
+            predict_type = algo_spec$predict_type,
             cv_folds = cv_folds
           ),
           columns = list(
@@ -353,7 +377,7 @@ auto_tune_classifier_spark <- function(sc,
       }
       
       # Train final model with best parameters
-      final_learner <- lrn(algo_spec$learner, predict_type = "prob")
+      final_learner <- lrn(algo_spec$learner, predict_type = algo_spec$predict_type)
       final_learner$param_set$values <- as.list(best_params)
       final_learner$train(task)
       

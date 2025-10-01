@@ -9,6 +9,7 @@
 #'                  - learner: mlr3 learner ID (e.g., "classif.ranger", "classif.xgboost")
 #'                  - param_space: paradox::ParamSet defining search space (optional if model_tuning = "untuned")
 #'                  - measure: tuning criterion (e.g., "classif.prauc", "classif.auc")
+#'                  - predict_type: prediction type - "prob" for probabilities or "response" for class labels (default: "prob")
 #' @param cv_folds Number of cross-validation folds for tuning (default: 2)
 #' @param n_evals Number of parameter evaluations for tuning (default: 15)
 #' @param cores_to_use Number of cores to use for parallel processing (default: detectCores() - 1)
@@ -42,7 +43,8 @@
 #'       mtry.ratio = paradox::p_dbl(0.1, 1),
 #'       min.node.size = paradox::p_int(1, 10)
 #'     ),
-#'     measure = "classif.prauc"
+#'     measure = "classif.prauc",
+#'     predict_type = "prob"  # Required for classif.prauc
 #'   ),
 #'   xgboost = list(
 #'     learner = "classif.xgboost",
@@ -51,7 +53,8 @@
 #'       eta = paradox::p_dbl(0.01, 0.3, logscale = TRUE),
 #'       max_depth = paradox::p_int(3, 8)
 #'     ),
-#'     measure = "classif.auc"
+#'     measure = "classif.auc",
+#'     predict_type = "prob"  # Required for classif.auc
 #'   )
 #' )
 #'
@@ -120,6 +123,27 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
                 stop(sprintf("Algorithm '%s' missing 'param_space' field (required for tuned models)", algo_name))
             }
         }
+
+        # Set default predict_type if not provided
+        if (!"predict_type" %in% names(algo_spec)) {
+            algorithms[[algo_name]]$predict_type <- "prob"
+        }
+
+        # Validate predict_type
+        valid_predict_types <- c("prob", "response")
+        if (!algo_spec$predict_type %in% valid_predict_types) {
+            stop(sprintf("Algorithm '%s': predict_type must be one of: %s",
+                        algo_name, paste(valid_predict_types, collapse = ", ")))
+        }
+
+        # Validate predict_type is compatible with measure
+        prob_measures <- c("classif.auc", "classif.prauc", "classif.logloss", "classif.bbrier")
+        measure_name <- algo_spec$measure
+
+        if (measure_name %in% prob_measures && algo_spec$predict_type != "prob") {
+            stop(sprintf("Algorithm '%s': measure '%s' requires predict_type = 'prob'",
+                        algo_name, measure_name))
+        }
     }
 
     # Setup parallel processing for local execution
@@ -138,8 +162,8 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
     )
 
     # Helper function to create learner with threading support
-    create_learner <- function(learner_id, cores) {
-        learner <- lrn(learner_id, predict_type = "prob")
+    create_learner <- function(learner_id, predict_type, cores) {
+        learner <- lrn(learner_id, predict_type = predict_type)
 
         # Set threading parameters based on learner type
         if (grepl("ranger", learner_id, fixed = TRUE)) {
@@ -206,7 +230,7 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
             message(paste("Training", algo_name, "with default parameters..."))
 
             # Create learner with default parameters
-            learner_untuned <- create_learner(algo_spec$learner, cores_to_use)
+            learner_untuned <- create_learner(algo_spec$learner, algo_spec$predict_type, cores_to_use)
 
             # Train untuned learner with timing
             training_start <- Sys.time()
@@ -229,7 +253,7 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
             message(paste("Tuning", algo_name, "..."))
 
             # Create learner
-            learner_tuned <- create_learner(algo_spec$learner, cores_to_use)
+            learner_tuned <- create_learner(algo_spec$learner, algo_spec$predict_type, cores_to_use)
 
             # Tune the learner (training happens within tuning process)
             learner_tuned <- tune_learner(learner_tuned, algo_spec$param_space, task, algo_spec$measure)
