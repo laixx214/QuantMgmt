@@ -160,20 +160,6 @@ auto_tune_classifier <- function(X_train, Y_train, algorithms,
         positive = .TARGET_POSITIVE
     )
 
-    # Helper function to create learner with threading support
-    create_learner <- function(learner_id, predict_type, cores) {
-        learner <- lrn(learner_id, predict_type = predict_type)
-
-        # Set threading parameters based on learner type
-        if (grepl("ranger", learner_id, fixed = TRUE)) {
-            learner$param_set$values$num.threads <- cores
-        } else if (grepl("xgboost", learner_id, fixed = TRUE)) {
-            learner$param_set$values$nthread <- cores
-        }
-
-        return(learner)
-    }
-
     # Internal tuning function with local parallel processing
     tune_learner <- function(learner, param_space, task, measure_name) {
         measure <- msr(measure_name)
