@@ -1,0 +1,36 @@
+# R specific
+.Rhistory
+.Rapp.history
+.RData
+.Ruserdata
+*.Rproj
+.Rproj.user/
+
+# Spark specific
+metastore_db/
+spark-warehouse/
+derby.log
+*.log
+*.lck
+
+# Build artifacts
+.o
+.so
+.dll
+*.exe
+
+# Generated documentation
+*.pdf
+*.html
+!inst/doc/*.html
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
