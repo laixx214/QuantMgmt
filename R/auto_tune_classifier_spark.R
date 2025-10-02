@@ -267,8 +267,9 @@ auto_tune_classifier_spark <- function(sc,
             lgr::get_logger("mlr3")$set_threshold("error")
             lgr::get_logger("bbotk")$set_threshold("error")
             
-            # Get training data from context
+            # Get training data and constants from context
             train_data <- context$train_data
+            TARGET_POSITIVE <- context$target_positive
             
             # Process each parameter set in this batch
             results <- lapply(seq_len(nrow(param_batch)), function(i) {
@@ -284,7 +285,7 @@ auto_tune_classifier_spark <- function(sc,
                   id = "task",
                   backend = train_data,
                   target = "target",
-                  positive = .TARGET_POSITIVE
+                  positive = TARGET_POSITIVE
                 )
                 
                 # Create learner with parameters
@@ -300,17 +301,17 @@ auto_tune_classifier_spark <- function(sc,
                 score <- rr$aggregate(measure)
                 
                 data.frame(
-                  param_id = param_id,
-                  score = score,
-                  param_json = param_json,
+                  param_id = as.integer(param_id),
+                  score = as.numeric(score),
+                  param_json = as.character(param_json),
                   error = NA_character_,
                   stringsAsFactors = FALSE
                 )
               }, error = function(e) {
                 data.frame(
-                  param_id = param_batch$param_id[i],
+                  param_id = as.integer(param_batch$param_id[i]),
                   score = NA_real_,
-                  param_json = param_batch$param_json[i],
+                  param_json = as.character(param_batch$param_json[i]),
                   error = as.character(e$message),
                   stringsAsFactors = FALSE
                 )
@@ -324,7 +325,8 @@ auto_tune_classifier_spark <- function(sc,
             learner_id = algo_spec$learner,
             measure_id = algo_spec$measure,
             predict_type = algo_spec$predict_type,
-            cv_folds = cv_folds
+            cv_folds = cv_folds,
+            target_positive = .TARGET_POSITIVE
           ),
           columns = list(
             param_id = "integer",
