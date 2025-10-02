@@ -15,6 +15,7 @@
 #' @param n_evals Number of random search iterations per algorithm (default: 50)
 #' @param model_tuning Character indicating which models to return: "untuned", "tuned", or "all" (default: "all")
 #' @param seed Integer seed for reproducibility (default: 123). When set, ensures reproducible results.
+#' @param cores_to_use Number of cores to use per learner for threading (default: NULL). When NULL, uses cores_per_executor from cluster configuration.
 #' @param verbose Logical indicating whether to print progress messages (default: TRUE)
 #'
 #' @return List containing:
@@ -65,7 +66,8 @@
 #'   cv_folds = 5,
 #'   n_evals = 50,
 #'   model_tuning = "all",
-#'   seed = 123
+#'   seed = 123,
+#'   cores_to_use = NULL  # Uses cores_per_executor by default
 #' )
 #'
 #' # Access models
@@ -87,6 +89,7 @@ auto_tune_classifier_spark <- function(sc,
                                  n_evals = 50,
                                  model_tuning = "all",
                                  seed = 123,
+                                 cores_to_use = NULL,
                                  verbose = TRUE) {
   
   # Set seed for reproducibility if provided
@@ -163,6 +166,17 @@ auto_tune_classifier_spark <- function(sc,
   # ========== CLUSTER DETECTION ==========
   cluster_info <- detect_cluster_config(sc, verbose)
 
+  # Set cores_to_use if not specified
+  if (is.null(cores_to_use)) {
+    cores_to_use <- cluster_info$cores_per_executor
+    if (verbose) message(sprintf("Setting cores_to_use to %d (cores per executor)", cores_to_use))
+  } else {
+    if (!is.numeric(cores_to_use) || length(cores_to_use) != 1 || cores_to_use < 1) {
+      stop("cores_to_use must be a single positive numeric value")
+    }
+    if (verbose) message(sprintf("Using %d cores per learner", cores_to_use))
+  }
+
   # ========== PREPARE DATA ==========
   # Prepare training data
   train_data <- data.frame(X_train)
@@ -196,8 +210,8 @@ auto_tune_classifier_spark <- function(sc,
       algo_spec <- algorithms[[algo_name]]
       start_time <- Sys.time()
 
-      # Create learner with default parameters
-      learner <- lrn(algo_spec$learner, predict_type = algo_spec$predict_type)
+      # Create learner with default parameters and threading support
+      learner <- create_learner(algo_spec$learner, algo_spec$predict_type, cores_to_use)
 
       # Train model
       learner$train(task)
@@ -262,24 +276,25 @@ auto_tune_classifier_spark <- function(sc,
               library(mlr3learners)
               library(jsonlite)
             })
-            
+
             # Suppress mlr3 output
             lgr::get_logger("mlr3")$set_threshold("error")
             lgr::get_logger("bbotk")$set_threshold("error")
-            
+
             # Get training data and constants from context
             train_data <- context$train_data
             TARGET_POSITIVE <- context$target_positive
-            
+            create_learner_func <- context$create_learner
+
             # Process each parameter set in this batch
             results <- lapply(seq_len(nrow(param_batch)), function(i) {
               tryCatch({
                 param_json <- param_batch$param_json[i]
                 param_id <- param_batch$param_id[i]
-                
+
                 # Parse parameters
                 params <- fromJSON(param_json, simplifyVector = TRUE)
-                
+
                 # Create task
                 task <- TaskClassif$new(
                   id = "task",
@@ -287,9 +302,9 @@ auto_tune_classifier_spark <- function(sc,
                   target = "target",
                   positive = TARGET_POSITIVE
                 )
-                
-                # Create learner with parameters
-                learner <- lrn(context$learner_id, predict_type = context$predict_type)
+
+                # Create learner with threading support and parameters
+                learner <- create_learner_func(context$learner_id, context$predict_type, context$cores_to_use)
                 learner$param_set$values <- as.list(params)
                 
                 # Perform cross-validation
@@ -326,6 +341,8 @@ auto_tune_classifier_spark <- function(sc,
             measure_id = algo_spec$measure,
             predict_type = algo_spec$predict_type,
             cv_folds = cv_folds,
+            cores_to_use = cores_to_use,
+            create_learner = create_learner,
             target_positive = .TARGET_POSITIVE
           ),
           columns = list(
@@ -366,9 +383,9 @@ auto_tune_classifier_spark <- function(sc,
         message(sprintf("    Best %s: %.4f (completed in %.2f minutes)",
                         algo_spec$measure, best_score, tuning_duration))
       }
-      
-      # Train final model with best parameters
-      final_learner <- lrn(algo_spec$learner, predict_type = algo_spec$predict_type)
+
+      # Train final model with best parameters and threading support
+      final_learner <- create_learner(algo_spec$learner, algo_spec$predict_type, cores_to_use)
       final_learner$param_set$values <- as.list(best_params)
       final_learner$train(task)
       
