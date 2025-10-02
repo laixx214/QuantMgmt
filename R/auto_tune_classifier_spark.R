@@ -259,7 +259,7 @@ auto_tune_classifier_spark <- function(sc,
       )
       param_spark <- sdf_copy_to(sc, param_df, "params_temp",
                                   overwrite = TRUE,
-                                  repartition = cluster_info$total_cores)
+                                  repartition = n_evals)
 
       if (verbose) {
         message(sprintf("    Evaluating %d parameter sets (%d-fold CV) across %d cores",
