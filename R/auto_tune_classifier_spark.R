@@ -169,7 +169,8 @@ auto_tune_classifier_spark <- function(sc,
       )
       param_spark <- sdf_copy_to(sc, param_df, "params_temp",
                                   overwrite = TRUE,
-                                  repartition = n_evals)
+                                  repartition = n_evals,
+                                  partition_by = "param_id")
       
       # Distribute evaluation across executors using spark_apply
       eval_results <- param_spark %>%
