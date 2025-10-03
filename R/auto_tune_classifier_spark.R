@@ -135,10 +135,12 @@ auto_tune_classifier_spark <- function(sc,
     untuned_learners <- list()
 
     for (algo_name in names(algorithms)) {
+      if (verbose) message(sprintf("  Training untuned model: %s", algo_name))
       algo_spec <- algorithms[[algo_name]]
       learner <- create_learner(algo_spec$learner, algo_spec$predict_type, cores_to_use)
       learner$train(task)
       untuned_learners[[algo_name]] <- learner
+      if (verbose) message(sprintf("  Completed untuned model: %s", algo_name))
     }
   }
   
@@ -152,6 +154,7 @@ auto_tune_classifier_spark <- function(sc,
     tuning_results <- list()
 
     for (algo_name in names(algorithms)) {
+      if (verbose) message(sprintf("  Tuning model: %s (%d evaluations)", algo_name, n_evals))
       algo_spec <- algorithms[[algo_name]]
 
       # Generate random parameter combinations
@@ -249,6 +252,9 @@ auto_tune_classifier_spark <- function(sc,
       best_params <- fromJSON(eval_results$param_json[best_idx])
       best_score <- eval_results$score[best_idx]
 
+      if (verbose) message(sprintf("  Best score for %s: %.4f", algo_name, best_score))
+      if (verbose) message(sprintf("  Training final model: %s", algo_name))
+
       # Train final model with best parameters
       final_learner <- create_learner(algo_spec$learner, algo_spec$predict_type, cores_to_use)
       final_learner$param_set$values <- as.list(best_params)
@@ -262,6 +268,8 @@ auto_tune_classifier_spark <- function(sc,
         measure = algo_spec$measure,
         archive = eval_results
       )
+
+      if (verbose) message(sprintf("  Completed tuned model: %s", algo_name))
 
       # Clean up temporary table
       DBI::dbRemoveTable(sc, "params_temp")
