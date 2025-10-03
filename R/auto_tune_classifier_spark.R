@@ -236,7 +236,9 @@ auto_tune_classifier_spark <- function(sc,
             cores_to_use = cores_to_use,
             create_learner = create_learner,
             target_positive = .TARGET_POSITIVE
-          )
+          ),
+          # important! Always specify group ID when distributing across Spark executors
+          group_by = "param_id"
         ) %>%
         collect()
 
