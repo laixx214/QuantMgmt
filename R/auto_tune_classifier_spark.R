@@ -3,7 +3,7 @@
 #' This function distributes hyperparameter search across Spark executors using spark_apply,
 #' maximizing cluster utilization for large-scale tuning operations.
 #'
-#' @param sc Active Spark connection from spark_connect(). If want to use nested parallelism, you need to set the spark.task.cpus to executor cores in the Spark config.
+#' @param sc Active Spark connection from spark_connect(). For nested parallelism, set the spark.task.cpus to executor cores in the Spark config.
 #' @param X_train Training features data.frame or matrix
 #' @param Y_train Training target vector (binary classification: 0/1 or logical, will be converted to factor)
 #' @param algorithms Named list where each element contains:
@@ -92,6 +92,9 @@ auto_tune_classifier_spark <- function(sc,
                                  cores_to_use = 1,
                                  verbose = TRUE) {
 
+  if (verbose) message("Starting auto_tune_classifier_spark...")
+  if (verbose) message("Validating input...")
+
   # Set seed
   if (!is.null(seed)) set.seed(seed)
 
@@ -111,6 +114,7 @@ auto_tune_classifier_spark <- function(sc,
     }
   }
 
+  if (verbose) message("Preparing training data...")
   # Prepare training data
   train_data <- data.frame(X_train)
   train_data$target <- factor(Y_train, levels = c(0, 1), labels = .TARGET_LEVELS)
@@ -127,6 +131,7 @@ auto_tune_classifier_spark <- function(sc,
   untuned_learners <- NULL
 
   if (model_tuning %in% c("untuned", "all")) {
+    if (verbose) message("Training untuned models...")
     untuned_learners <- list()
 
     for (algo_name in names(algorithms)) {
@@ -142,6 +147,7 @@ auto_tune_classifier_spark <- function(sc,
   tuning_results <- NULL
 
   if (model_tuning %in% c("tuned", "all")) {
+    if (verbose) message("Training tuned models...")
     tuned_learners <- list()
     tuning_results <- list()
 
@@ -177,50 +183,46 @@ auto_tune_classifier_spark <- function(sc,
             lgr::get_logger("mlr3")$set_threshold("error")
             lgr::get_logger("bbotk")$set_threshold("error")
 
-            # Process each parameter set
-            results <- lapply(seq_len(nrow(param_batch)), function(i) {
-              tryCatch({
-                params <- fromJSON(param_batch$param_json[i], simplifyVector = TRUE)
+            # Process parameter set (single row per partition)
+            tryCatch({
+              params <- fromJSON(param_batch$param_json[1], simplifyVector = TRUE)
 
-                # Create task
-                task <- TaskClassif$new(
-                  id = "task",
-                  backend = context$train_data,
-                  target = "target",
-                  positive = context$target_positive
-                )
+              # Create task
+              task <- TaskClassif$new(
+                id = "task",
+                backend = context$train_data,
+                target = "target",
+                positive = context$target_positive
+              )
 
-                # Create learner with parameters
-                learner <- context$create_learner(context$learner_id, context$predict_type, context$cores_to_use)
-                learner$param_set$values <- as.list(params)
+              # Create learner with parameters
+              learner <- context$create_learner(context$learner_id, context$predict_type, context$cores_to_use)
+              learner$param_set$values <- as.list(params)
 
-                # Cross-validation
-                resampling <- rsmp("cv", folds = context$cv_folds)
-                rr <- resample(task, learner, resampling, store_models = FALSE)
+              # Cross-validation
+              resampling <- rsmp("cv", folds = context$cv_folds)
+              rr <- resample(task, learner, resampling, store_models = FALSE)
 
-                # Get score
-                measure <- msr(context$measure_id)
-                score <- rr$aggregate(measure)
+              # Get score
+              measure <- msr(context$measure_id)
+              score <- rr$aggregate(measure)
 
-                data.frame(
-                  param_id = as.integer(param_batch$param_id[i]),
-                  score = as.numeric(score),
-                  param_json = as.character(param_batch$param_json[i]),
-                  error = NA_character_,
-                  stringsAsFactors = FALSE
-                )
-              }, error = function(e) {
-                data.frame(
-                  param_id = as.integer(param_batch$param_id[i]),
-                  score = NA_real_,
-                  param_json = as.character(param_batch$param_json[i]),
-                  error = as.character(e$message),
-                  stringsAsFactors = FALSE
-                )
-              })
+              data.frame(
+                param_id = as.integer(param_batch$param_id[1]),
+                score = as.numeric(score),
+                param_json = as.character(param_batch$param_json[1]),
+                error = NA_character_,
+                stringsAsFactors = FALSE
+              )
+            }, error = function(e) {
+              data.frame(
+                param_id = as.integer(param_batch$param_id[1]),
+                score = NA_real_,
+                param_json = as.character(param_batch$param_json[1]),
+                error = as.character(e$message),
+                stringsAsFactors = FALSE
+              )
             })
-
-            do.call(rbind, results)
           },
           context = list(
             train_data = train_data,
