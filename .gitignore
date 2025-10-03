@@ -34,3 +34,4 @@ derby.log
 # OS
 .DS_Store
 Thumbs.db
+*.tar.gz
