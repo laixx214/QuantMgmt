@@ -22,9 +22,9 @@
 #'   - tuned: List of tuned mlr3 learners (if model_tuning is "tuned" or "all")
 #'   - untuned: List of untuned mlr3 learners (if model_tuning is "untuned" or "all")
 #'
-#' @importFrom sparklyr spark_connect spark_session_config spark_version sdf_copy_to spark_apply
-#' @importFrom mlr3 TaskClassif lrn msr rsmp resample
-#' @importFrom paradox ps p_int p_dbl generate_design_random
+#' @importFrom sparklyr sdf_copy_to spark_apply
+#' @importFrom mlr3 TaskClassif msr rsmp resample
+#' @importFrom paradox generate_design_random
 #' @importFrom jsonlite toJSON fromJSON
 #' @importFrom DBI dbRemoveTable
 #' @importFrom dplyr %>% collect
