@@ -13,11 +13,12 @@ auto_tune_classifier_spark(
   n_evals = 50,
   model_tuning = "all",
   seed = 123,
+  cores_to_use = 1,
   verbose = TRUE
 )
 }
 \arguments{
-\item{sc}{Active Spark connection from spark_connect()}
+\item{sc}{Active Spark connection from spark_connect(). For nested parallelism, set the spark.task.cpus to executor cores in the Spark config.}
 
 \item{X_train}{Training features data.frame or matrix}
 
@@ -37,14 +38,14 @@ auto_tune_classifier_spark(
 
 \item{seed}{Integer seed for reproducibility (default: 123). When set, ensures reproducible results.}
 
-\item{verbose}{Logical indicating whether to print progress messages (default: TRUE)}
+\item{cores_to_use}{Number of cores to use per learner for threading (default: 1)}
+
+\item{verbose}{Logical for progress messages (default: TRUE)}
 }
 \value{
 List containing:
   - tuned: List of tuned mlr3 learners (if model_tuning is "tuned" or "all")
   - untuned: List of untuned mlr3 learners (if model_tuning is "untuned" or "all")
-  - tuning_results: List of tuning results for each algorithm (if model_tuning is "tuned" or "all")
-  - cluster_info: Information about the cluster configuration
 }
 \description{
 This function distributes hyperparameter search across Spark executors using spark_apply,
@@ -54,7 +55,9 @@ maximizing cluster utilization for large-scale tuning operations.
 \dontrun{
 # Connect to Spark cluster
 library(sparklyr)
-sc <- spark_connect(method = "databricks")
+config <- spark_config()
+config$spark.task.cpus <- 8  # Each task claims 8 cores (1 full executor)
+sc <- spark_connect(method = "databricks", config = config)
 
 # Prepare data
 X_train <- iris[, 1:4]
@@ -83,7 +86,8 @@ results <- auto_tune_classifier_spark(
   cv_folds = 5,
   n_evals = 50,
   model_tuning = "all",
-  seed = 123
+  seed = 123,
+  cores_to_use = 1
 )
 
 # Access models
