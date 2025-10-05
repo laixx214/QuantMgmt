@@ -32,8 +32,9 @@
 #'   - untuned: List of untuned Spark ML models (if model_tuning is "untuned" or "all")
 #'
 #' @importFrom sparklyr sdf_copy_to ft_string_indexer ft_vector_assembler spark_connection
-#' @importFrom sparklyr ml_random_forest_classifier ml_gbt_classifier
+#' @importFrom sparklyr ml_random_forest_classifier
 #' @importFrom sparklyr ml_cross_validator ml_multiclass_classification_evaluator ml_fit ml_best_model ml_validation_metrics
+#' @importFrom sparkxgb xgboost_classifier
 #' @importFrom dplyr %>%
 #'
 #' @export
@@ -306,7 +307,7 @@ auto_tune_classifier_spark <- function(sc,
       prediction_col = "prediction",
       seed = seed
     ),
-    "xgboost" = ml_gbt_classifier(
+    "xgboost" = xgboost_classifier(
       sc,
       features_col = "features",
       label_col = "label",
