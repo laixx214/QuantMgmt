@@ -126,7 +126,8 @@ auto_tune_classifier_spark <- function(sc,
     # Copy to Spark
     train_data <- sdf_copy_to(sc, train_data_local, "training_data", overwrite = TRUE)
 
-    feature_cols <- colnames(X_train)
+    # Get column names from Spark DataFrame (sdf_copy_to converts dots to underscores)
+    feature_cols <- setdiff(colnames(train_data), "target")
     target_col <- "target"
 
   } else {
