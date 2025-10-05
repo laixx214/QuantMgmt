@@ -208,10 +208,6 @@ auto_tune_classifier_spark <- function(sc,
         stop(sprintf("Algorithm '%s' missing 'param_space' (required for tuned models)", algo_name))
       }
 
-      # Generate random parameter combinations
-      set.seed(seed)
-      param_combos <- .generate_random_params_spark(algo_spec$param_space, n_evals)
-
       # Create evaluator with validation
       measure <- ifelse("measure" %in% names(algo_spec), algo_spec$measure, "areaUnderPR")
 
@@ -235,6 +231,14 @@ auto_tune_classifier_spark <- function(sc,
         sc = sc,
         learner = algo_spec$learner,
         seed = seed
+      )
+
+      # Generate random parameter combinations
+      set.seed(seed)
+      param_combos <- .generate_random_params_spark(
+        learner = algo_spec$learner,
+        param_space = algo_spec$param_space,
+        n = n_evals
       )
 
       # Setup cross-validator with random parameter search
@@ -278,25 +282,26 @@ auto_tune_classifier_spark <- function(sc,
 
 #' Generate Random Parameter Combinations for Spark ML
 #'
+#' @param learner Algorithm name ("random_forest" or "xgboost")
 #' @param param_space Named list of parameter ranges
 #' @param n Number of random combinations to generate
-#' @return List of parameter lists for ml_cross_validator
+#' @return Named list with algorithm name containing parameter vectors for ml_cross_validator
 #' @keywords internal
-.generate_random_params_spark <- function(param_space, n) {
-  param_list <- list()
+.generate_random_params_spark <- function(learner, param_space, n) {
+  # Create parameter grid by sampling n values from each parameter range
+  param_grid <- list()
 
-  for (i in 1:n) {
-    param_combo <- list()
-
-    for (param_name in names(param_space)) {
-      # Randomly sample one value from each parameter's range
-      param_combo[[param_name]] <- sample(param_space[[param_name]], 1)
-    }
-
-    param_list[[i]] <- param_combo
+  for (param_name in names(param_space)) {
+    # Sample n values with replacement from each parameter's range
+    param_grid[[param_name]] <- sample(param_space[[param_name]], n, replace = TRUE)
   }
 
-  return(param_list)
+  # Wrap in named list with the learner name as key
+  # sparklyr expects format: list(learner_name = list(param1 = c(values), param2 = c(values), ...))
+  result <- list()
+  result[[learner]] <- param_grid
+
+  return(result)
 }
 
 

@@ -38,3 +38,7 @@ derby.log
 .DS_Store
 Thumbs.db
 *.tar.gz
+.databricks
+
+# Databricks
+databricks.yml
