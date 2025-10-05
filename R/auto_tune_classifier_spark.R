@@ -19,7 +19,7 @@
 #'   - param_space: named list defining parameter ranges for random search (optional if model_tuning = "untuned")
 #'     * For random_forest: num_trees (100-500), max_depth (3-8), min_instances_per_node (1-10), subsampling_rate (0.5-1), feature_subset_strategy
 #'     * For xgboost: max_iter (50-200), max_depth (3-8), step_size (0.01-0.3), min_instances_per_node (1-10), subsampling_rate (0.5-1), col_sample_by_tree (0.5-1)
-#'   - measure: evaluation metric ("auc", "accuracy", "f1", "weightedPrecision", "weightedRecall")
+#'   - measure: evaluation metric ("areaUnderROC" or "areaUnderPR")
 #' @param cv_folds Number of cross-validation folds for tuning (default: 5)
 #' @param n_evals Number of random search iterations per algorithm (default: 50)
 #' @param model_tuning Character indicating which models to return: "untuned", "tuned", or "all" (default: "all")
@@ -33,7 +33,7 @@
 #'
 #' @importFrom sparklyr sdf_copy_to ft_string_indexer ft_vector_assembler spark_connection
 #' @importFrom sparklyr ml_random_forest_classifier
-#' @importFrom sparklyr ml_cross_validator ml_multiclass_classification_evaluator ml_fit ml_validation_metrics
+#' @importFrom sparklyr ml_cross_validator ml_binary_classification_evaluator ml_fit ml_validation_metrics
 #' @importFrom sparkxgb xgboost_classifier
 #' @importFrom dplyr %>%
 #'
@@ -58,7 +58,7 @@
 #'       subsampling_rate = seq(0.5, 1.0, by = 0.1),
 #'       feature_subset_strategy = c("auto", "sqrt", "log2", "onethird")
 #'     ),
-#'     measure = "auc"
+#'     measure = "areaUnderPR"
 #'   )
 #' )
 #'
@@ -212,12 +212,21 @@ auto_tune_classifier_spark <- function(sc,
       set.seed(seed)
       param_combos <- .generate_random_params_spark(algo_spec$param_space, n_evals)
 
-      # Create evaluator
-      measure <- ifelse("measure" %in% names(algo_spec), algo_spec$measure, "auc")
-      evaluator <- ml_multiclass_classification_evaluator(
+      # Create evaluator with validation
+      measure <- ifelse("measure" %in% names(algo_spec), algo_spec$measure, "areaUnderPR")
+
+      # Validate metric for binary classification
+      valid_metrics <- c("areaUnderROC", "areaUnderPR")
+      if (!measure %in% valid_metrics) {
+        stop(sprintf(
+          "Algorithm '%s': Invalid measure '%s'. For binary classification, use: %s",
+          algo_name, measure, paste(valid_metrics, collapse = ", ")
+        ))
+      }
+
+      evaluator <- ml_binary_classification_evaluator(
         sc,
         label_col = "label",
-        prediction_col = "prediction",
         metric_name = measure
       )
 
@@ -377,7 +386,7 @@ auto_tune_classifier_spark <- function(sc,
 #'   rf = list(
 #'     learner = "random_forest",
 #'     param_space = rf_space,
-#'     measure = "auc"
+#'     measure = "areaUnderPR"
 #'   )
 #' )
 #' }
