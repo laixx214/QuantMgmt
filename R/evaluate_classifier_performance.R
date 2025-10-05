@@ -1,15 +1,19 @@
 #' Evaluate Auto-Tuned Classifier Performance
 #'
 #' This function evaluates the performance of models returned by auto_tune_classifier
-#' using comprehensive binary classification metrics.
+#' or auto_tune_classifier_spark using comprehensive binary classification metrics.
 #'
-#' @param model_results Output from auto_tune_classifier function (list or named list of learners)
+#' @param model_results Output from auto_tune_classifier or auto_tune_classifier_spark
+#'                      function (list or named list of learners/models)
 #' @param data List with two elements: X_validate (features) and Y_validate (outcomes).
 #'             If NULL (default), uses training data from the learners.
+#'             Note: For Spark models, data cannot be NULL - validation data must be provided.
 #' @param decision_threshold Numeric threshold for converting probabilities to class predictions (default: 0.5)
 #'
 #' @return Data frame with performance metrics for each model, including improvement calculations
 #'         when both tuned and untuned models are present
+#'
+#' @importFrom dplyr %>% collect pull
 #'
 #' @export
 #'
@@ -36,6 +40,12 @@ evaluate_classifier_performance <- function(model_results, data = NULL, decision
         }
     }
 
+    # Check if Spark models require validation data
+    is_spark <- inherits(model_results, "spark_ml_ensemble")
+    if (is_spark && is.null(data)) {
+        stop("For Spark models, data cannot be NULL. Please provide validation data with X_validate and Y_validate.")
+    }
+
     # Get predictions using predict_classifier
     X_prediction <- if (!is.null(data)) data$X_validate else NULL
     predictions <- predict_classifier(model_results, X_prediction)
@@ -43,6 +53,18 @@ evaluate_classifier_performance <- function(model_results, data = NULL, decision
     # Get true labels
     if (!is.null(data)) {
         Y_eval <- data$Y_validate
+
+        # If Y_validate is a Spark DataFrame, collect to local
+        if (inherits(Y_eval, "tbl_spark")) {
+            # Assume Y_validate is a single column Spark DataFrame
+            Y_eval <- Y_eval %>% dplyr::collect() %>% dplyr::pull(1)
+        }
+
+        # Convert to binary numeric if needed
+        if (!is.numeric(Y_eval)) {
+            Y_eval <- as.numeric(as.character(Y_eval) == .TARGET_POSITIVE)
+        }
+
         data_source <- "validation"
     } else {
         # Extract true labels from training data (use any available learner's task)
