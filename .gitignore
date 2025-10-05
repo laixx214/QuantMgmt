@@ -6,6 +6,9 @@
 *.Rproj
 .Rproj.user/
 
+# Test files (local development only)
+test/
+
 # Spark specific
 metastore_db/
 spark-warehouse/
