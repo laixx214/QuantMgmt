@@ -7,7 +7,7 @@
 .Rproj.user/
 
 # Test files (local development only)
-test/
+# test/
 
 # Spark specific
 metastore_db/
