@@ -16,8 +16,8 @@
 #'         Each element contains probability predictions for each algorithm and ensemble averages
 #'
 #' @importFrom mlr3 TaskClassif
-#' @importFrom sparklyr ml_predict sdf_copy_to spark_connection
-#' @importFrom dplyr %>% select mutate pull
+#' @importFrom sparklyr ml_predict sdf_copy_to spark_connection spark_connection_find
+#' @importFrom dplyr %>% select mutate pull collect
 #'
 #' @export
 #'
@@ -108,11 +108,14 @@ predict_classifier <- function(model_results, X_prediction = NULL) {
                 pred_result <- ml_predict(learner, pred_data)
 
                 # Extract probability for positive class
-                # Spark ML stores probabilities in a vector column, extract second element (positive class)
-                predictions[[alg_name]] <- pred_result %>%
-                    dplyr::select(probability) %>%
-                    dplyr::mutate(prob_positive = probability[2]) %>%
-                    dplyr::pull(prob_positive)
+                # Spark ML stores probabilities in a vector column
+                # We need to use spark_apply or extract via UDF
+                # For now, collect the data and extract locally
+                pred_local <- pred_result %>% dplyr::collect()
+
+                # Extract probability of positive class (second element of probability vector)
+                # The probability column is a list-column where each element is a vector
+                predictions[[alg_name]] <- sapply(pred_local$probability, function(x) x[2])
 
             } else {
                 # mlr3 Learner prediction

@@ -1,13 +1,14 @@
 Package: QuantMgmt
 Type: Package
 Title: Quantitative Management Tools for Machine Learning
-Version: 0.3.0
+Version: 0.4.0
 Author: yufeng.lai
 Maintainer: yufeng.lai <yufeng.lai@example.com>
 Authors@R: person("yufeng.lai", email = "yufeng.lai@example.com", role = c("aut", "cre"))
 Description: A collection of tools for automated machine learning model tuning,
     prediction, and evaluation. Provides functions for hyperparameter tuning of
     classification algorithms, performance evaluation, and ensemble predictions.
+    Supports both local mlr3 and distributed Spark ML backends.
 License: MIT + file LICENSE
 Encoding: UTF-8
 RoxygenNote: 7.3.2
@@ -23,6 +24,7 @@ Imports:
     DBI,
     jsonlite,
     sparklyr,
+    sparkxgb,
     dplyr,
     lgr
 Suggests:
@@ -30,5 +32,7 @@ Suggests:
     ranger,
     xgboost,
     SparkR,
+    pROC,
+    brickster,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3

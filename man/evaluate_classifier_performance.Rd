@@ -11,10 +11,12 @@ evaluate_classifier_performance(
 )
 }
 \arguments{
-\item{model_results}{Output from auto_tune_classifier function (list or named list of learners)}
+\item{model_results}{Output from auto_tune_classifier or auto_tune_classifier_spark
+function (list or named list of learners/models)}
 
 \item{data}{List with two elements: X_validate (features) and Y_validate (outcomes).
-If NULL (default), uses training data from the learners.}
+If NULL (default), uses training data from the learners.
+Note: For Spark models, data cannot be NULL - validation data must be provided.}
 
 \item{decision_threshold}{Numeric threshold for converting probabilities to class predictions (default: 0.5)}
 }
@@ -24,7 +26,7 @@ Data frame with performance metrics for each model, including improvement calcul
 }
 \description{
 This function evaluates the performance of models returned by auto_tune_classifier
-using comprehensive binary classification metrics.
+or auto_tune_classifier_spark using comprehensive binary classification metrics.
 }
 \examples{
 \dontrun{

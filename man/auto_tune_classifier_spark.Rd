@@ -2,33 +2,43 @@
 % Please edit documentation in R/auto_tune_classifier_spark.R
 \name{auto_tune_classifier_spark}
 \alias{auto_tune_classifier_spark}
-\title{Automatically Tune and Train Multiple Classification Models with Spark Distribution}
+\title{Automatically Tune and Train Multiple Classification Models with Spark ML}
 \usage{
 auto_tune_classifier_spark(
   sc,
   X_train,
   Y_train,
+  data = NULL,
   algorithms,
   cv_folds = 5,
   n_evals = 50,
   model_tuning = "all",
   seed = 123,
-  cores_to_use = 1,
+  parallelism = 1,
   verbose = TRUE
 )
 }
 \arguments{
-\item{sc}{Active Spark connection from spark_connect(). For nested parallelism, set the spark.task.cpus to executor cores in the Spark config.}
+\item{sc}{Active Spark connection from spark_connect()}
 
-\item{X_train}{Training features data.frame or matrix}
+\item{X_train}{Training features. Can be:
+- data.frame or matrix (when data = NULL)
+- character vector of column names (when data is a Spark DataFrame)}
 
-\item{Y_train}{Training target vector (binary classification: 0/1 or logical, will be converted to factor)}
+\item{Y_train}{Training target. Can be:
+- vector (binary classification: 0/1 or logical) (when data = NULL)
+- character string of column name (when data is a Spark DataFrame)}
+
+\item{data}{Spark DataFrame containing training data (default: NULL).
+- If NULL: X_train and Y_train should be data.frame/matrix and vector
+- If provided: X_train and Y_train should be column names}
 
 \item{algorithms}{Named list where each element contains:
-- learner: mlr3 learner ID (e.g., "classif.ranger", "classif.xgboost")
-- param_space: paradox::ParamSet defining search space (optional if model_tuning = "untuned")
-- measure: mlr3 measure ID (e.g., "classif.auc", "classif.prauc")
-- predict_type: prediction type - "prob" for probabilities or "response" for class labels (default: "prob")}
+- learner: Spark ML algorithm ("random_forest" or "xgboost")
+- param_space: named list defining parameter ranges for random search (optional if model_tuning = "untuned")
+  * For random_forest: num_trees (100-500), max_depth (3-8), min_instances_per_node (1-10), subsampling_rate (0.5-1), feature_subset_strategy
+  * For xgboost: max_iter (50-200), max_depth (3-8), step_size (0.01-0.3), min_instances_per_node (1-10), subsampling_rate (0.5-1), col_sample_by_tree (0.5-1)
+- measure: evaluation metric ("auc", "accuracy", "f1", "weightedPrecision", "weightedRecall")}
 
 \item{cv_folds}{Number of cross-validation folds for tuning (default: 5)}
 
@@ -36,48 +46,45 @@ auto_tune_classifier_spark(
 
 \item{model_tuning}{Character indicating which models to return: "untuned", "tuned", or "all" (default: "all")}
 
-\item{seed}{Integer seed for reproducibility (default: 123). When set, ensures reproducible results.}
+\item{seed}{Integer seed for reproducibility (default: 123)}
 
-\item{cores_to_use}{Number of cores to use per learner for threading (default: 1)}
+\item{parallelism}{Number of parallel threads for CV (default: 1)}
 
 \item{verbose}{Logical for progress messages (default: TRUE)}
 }
 \value{
-List containing:
-  - tuned: List of tuned mlr3 learners (if model_tuning is "tuned" or "all")
-  - untuned: List of untuned mlr3 learners (if model_tuning is "untuned" or "all")
+List containing (structure depends on model_tuning parameter):
+  - tuned: List of tuned Spark ML models (if model_tuning is "tuned" or "all")
+  - untuned: List of untuned Spark ML models (if model_tuning is "untuned" or "all")
 }
 \description{
-This function distributes hyperparameter search across Spark executors using spark_apply,
-maximizing cluster utilization for large-scale tuning operations.
+This function uses Spark's native ML functions for hyperparameter tuning and model training,
+leveraging Spark's distributed computing capabilities for efficient parallel search.
+Supports both local data.frame/matrix input and Spark DataFrame input.
 }
 \examples{
 \dontrun{
-# Connect to Spark cluster
+# Example 1: Using local data.frame (traditional approach)
 library(sparklyr)
-config <- spark_config()
-config$spark.task.cpus <- 8  # Each task claims 8 cores (1 full executor)
-sc <- spark_connect(method = "databricks", config = config)
+sc <- spark_connect(master = "local", version = "3.4")
 
-# Prepare data
 X_train <- iris[, 1:4]
 Y_train <- ifelse(iris$Species == "setosa", 1, 0)
 
-# Define algorithms
 algorithms <- list(
-  ranger = list(
-    learner = "classif.ranger",
-    param_space = paradox::ps(
-      num.trees = paradox::p_int(100, 500),
-      mtry.ratio = paradox::p_dbl(0.1, 1),
-      min.node.size = paradox::p_int(1, 10)
+  rf = list(
+    learner = "random_forest",
+    param_space = list(
+      num_trees = seq(100, 500, by = 50),
+      max_depth = 3:8,
+      min_instances_per_node = 1:10,
+      subsampling_rate = seq(0.5, 1.0, by = 0.1),
+      feature_subset_strategy = c("auto", "sqrt", "log2", "onethird")
     ),
-    measure = "classif.auc",
-    predict_type = "prob"  # Required for classif.auc
+    measure = "auc"
   )
 )
 
-# Train models
 results <- auto_tune_classifier_spark(
   sc = sc,
   X_train = X_train,
@@ -85,19 +92,22 @@ results <- auto_tune_classifier_spark(
   algorithms = algorithms,
   cv_folds = 5,
   n_evals = 50,
-  model_tuning = "all",
-  seed = 123,
-  cores_to_use = 1
+  model_tuning = "all"
 )
 
-# Access models
-tuned_model <- results$tuned$ranger
-untuned_model <- results$untuned$ranger
+# Example 2: Using Spark DataFrame with column names
+iris_tbl <- copy_to(sc, iris, "iris", overwrite = TRUE)
 
-# Make predictions
-predictions <- tuned_model$predict_newdata(newdata = iris[1:10, 1:4])
+results <- auto_tune_classifier_spark(
+  sc = sc,
+  X_train = c("Sepal_Length", "Sepal_Width", "Petal_Length", "Petal_Width"),
+  Y_train = "Species",
+  data = iris_tbl,
+  algorithms = algorithms,
+  cv_folds = 5,
+  n_evals = 50
+)
 
-# Disconnect
 spark_disconnect(sc)
 }
 

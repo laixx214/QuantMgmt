@@ -33,7 +33,7 @@
 #'
 #' @importFrom sparklyr sdf_copy_to ft_string_indexer ft_vector_assembler spark_connection
 #' @importFrom sparklyr ml_random_forest_classifier
-#' @importFrom sparklyr ml_cross_validator ml_multiclass_classification_evaluator ml_fit ml_best_model ml_validation_metrics
+#' @importFrom sparklyr ml_cross_validator ml_multiclass_classification_evaluator ml_fit ml_validation_metrics
 #' @importFrom sparkxgb xgboost_classifier
 #' @importFrom dplyr %>%
 #'
@@ -243,7 +243,7 @@ auto_tune_classifier_spark <- function(sc,
       cv_model <- ml_fit(cv, train_prepared)
 
       # Get best model and metrics
-      best_model <- ml_best_model(cv_model)
+      best_model <- cv_model$best_model
       metrics <- ml_validation_metrics(cv_model)
       best_score <- max(metrics$metric)
 

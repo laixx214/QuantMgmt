@@ -7,10 +7,12 @@
 predict_classifier(model_results, X_prediction = NULL)
 }
 \arguments{
-\item{model_results}{Output from auto_tune_classifier function (list or named list of learners)}
+\item{model_results}{Output from auto_tune_classifier or auto_tune_classifier_spark
+function (list or named list of learners/models)}
 
 \item{X_prediction}{Matrix or data frame of features for prediction.
-If NULL (default), uses training data from the learners.}
+If NULL (default), uses training data from the learners.
+For Spark models, can also be a Spark DataFrame.}
 }
 \value{
 List with two elements:
@@ -19,8 +21,9 @@ List with two elements:
         Each element contains probability predictions for each algorithm and ensemble averages
 }
 \description{
-This function generates predictions using models returned by auto_tune_classifier.
-Returns probability predictions for individual models and ensemble predictions.
+This function generates predictions using models returned by auto_tune_classifier
+or auto_tune_classifier_spark. Returns probability predictions for individual
+models and ensemble predictions.
 }
 \examples{
 \dontrun{
