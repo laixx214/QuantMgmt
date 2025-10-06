@@ -1,3 +1,4 @@
+# Databricks notebook source
 cat("\n═══════════════════════════════════════════════════════════\n")
 cat("  QuantMgmt Spark Classifier Tests\n")
 cat("═══════════════════════════════════════════════════════════\n\n")
@@ -28,12 +29,14 @@ library(sparklyr)
 library(dplyr)
 cat("  ✅ Packages loaded\n\n")
 
+# COMMAND ----------
 # Step 2: Get Spark connection
 cat("Step 2: Finding Spark connection...\n")
 sc <- spark_connect(method = "databricks")
 DBI::dbExecute(sc, "USE home_yufeng_lai.default")
 cat("  ✅ Connected:", class(sc)[1], "\n\n")
 
+# COMMAND ----------
 # Step 3: Prepare data
 cat("Step 3: Preparing test data...\n")
 data(iris)
@@ -51,17 +54,19 @@ Y_val <- iris_binary[-train_idx, "is_setosa"]
 
 cat("  ✅ Iris data: ", nrow(X_train), " train, ", nrow(X_val), " val\n\n", sep = "")
 
+# COMMAND ----------
 # Step 4: Configure algorithms
 cat("Step 4: Configuring algorithms...\n")
 algorithms <- list(
   rf = list(
     learner = "random_forest",
     param_space = list(num_trees = c(50, 100), max_depth = c(3, 5)),
-    measure = "auc"
+    measure = "areaUnderPR"
   )
 )
 cat("  ✅ Random Forest: 2x2 param grid, 2-fold CV, 2 evals\n\n")
 
+# COMMAND ----------
 # Step 5: Test sequential training
 cat("═══════════════════════════════════════════════════════════\n")
 cat("Step 5: Sequential Training (parallelism=1)\n")
@@ -76,6 +81,7 @@ time_seq <- as.numeric(difftime(Sys.time(), t1, units = "secs"))
 cat("\n  ✅ Sequential: ", round(time_seq, 2), " sec, ",
     length(res_seq$tuned) + length(res_seq$untuned), " models\n\n", sep = "")
 
+# COMMAND ----------
 # Step 6: Test parallel training
 cat("═══════════════════════════════════════════════════════════\n")
 cat("Step 6: Parallel Training (parallelism=4)\n")
@@ -90,6 +96,7 @@ time_par <- as.numeric(difftime(Sys.time(), t2, units = "secs"))
 cat("\n  ✅ Parallel: ", round(time_par, 2), " sec, speedup: ",
     round(time_seq/time_par, 2), "x\n\n", sep = "")
 
+# COMMAND ----------
 # Step 7: Test predictions
 cat("═══════════════════════════════════════════════════════════\n")
 cat("Step 7: Testing Predictions\n")
@@ -104,6 +111,7 @@ cat("  ✅ Predictions: tuned=", length(preds$tuned_prediction),
     ", untuned=", length(preds$untuned_prediction), "\n", sep = "")
 cat("  ", ifelse(dim_ok, "✅", "❌"), " Dimensions correct\n\n", sep = "")
 
+# COMMAND ----------
 # Step 8: Test evaluation
 cat("═══════════════════════════════════════════════════════════\n")
 cat("Step 8: Testing Evaluation\n")
@@ -116,6 +124,7 @@ perf <- evaluate_classifier_performance(
 cat("  ✅ Performance metrics calculated\n\n")
 print(perf[, c("algorithm", "model_type", "classif.auc", "classif.acc")])
 
+# COMMAND ----------
 # Step 9: Summary and bug detection
 cat("\n\n═══════════════════════════════════════════════════════════\n")
 cat("  TEST SUMMARY\n")
