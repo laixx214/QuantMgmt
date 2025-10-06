@@ -16,7 +16,7 @@
 #'         Each element contains probability predictions for each algorithm and ensemble averages
 #'
 #' @importFrom mlr3 TaskClassif
-#' @importFrom sparklyr ml_predict sdf_copy_to spark_connection spark_connection_find
+#' @importFrom sparklyr ml_predict sdf_copy_to spark_connection spark_connection_find ft_vector_assembler
 #' @importFrom dplyr %>% select mutate pull collect
 #'
 #' @export
@@ -102,6 +102,12 @@ predict_classifier <- function(model_results, X_prediction = NULL) {
                     # Convert to Spark DataFrame
                     sc <- spark_connection(learner)
                     pred_data <- sdf_copy_to(sc, as.data.frame(X_pred), "pred_temp", overwrite = TRUE)
+                }
+
+                # Apply feature assembler if pred_data doesn't have 'features' column
+                if (!"features" %in% colnames(pred_data)) {
+                    feature_cols <- setdiff(colnames(pred_data), c("target", "label", "features", "prediction", "probability"))
+                    pred_data <- pred_data %>% ft_vector_assembler(input_cols = feature_cols, output_col = "features")
                 }
 
                 # Get predictions from Spark model
