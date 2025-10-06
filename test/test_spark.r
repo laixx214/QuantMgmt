@@ -27,6 +27,8 @@ cat("  ✅ All R files sourced from GitHub\n\n")
 cat("Loading required packages...\n")
 library(sparklyr)
 library(dplyr)
+library(sparkxgb)
+
 cat("  ✅ Packages loaded\n\n")
 
 # COMMAND ----------
@@ -64,11 +66,16 @@ cat("Step 4: Configuring algorithms...\n")
 algorithms <- list(
   rf = list(
     learner = "random_forest",
-    param_space = list(num_trees = c(50, 100), max_depth = c(3, 5)),
+    param_space = get_default_search_space_spark("random_forest"),
+    measure = "areaUnderPR"
+  ),
+  xgb = list(
+    learner = "xgboost",
+    param_space = get_default_search_space_spark("xgboost"),
     measure = "areaUnderPR"
   )
 )
-cat("  ✅ Random Forest: 2x2 param grid, 2-fold CV, 2 evals\n\n")
+cat("  ✅ Random Forest: 2x2 param grid, XGBoost: 2x2 param grid, 2-fold CV\n\n")
 
 # COMMAND ----------
 # Step 5: Test sequential training with X_train, Y_train

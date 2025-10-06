@@ -37,7 +37,6 @@
 #' @importFrom sparklyr sdf_copy_to ft_string_indexer ft_vector_assembler spark_connection
 #' @importFrom sparklyr ml_random_forest_classifier
 #' @importFrom sparklyr ml_cross_validator ml_binary_classification_evaluator ml_fit ml_validation_metrics
-#' @importFrom sparkxgb xgboost_classifier
 #' @importFrom dplyr %>%
 #'
 #' @export
@@ -345,13 +344,19 @@ auto_tune_classifier_spark <- function(sc,
       prediction_col = "prediction",
       seed = seed
     ),
-    "xgboost" = xgboost_classifier(
-      sc,
-      features_col = "features",
-      label_col = "label",
-      prediction_col = "prediction",
-      seed = seed
-    ),
+    "xgboost" = {
+      # Check if sparkxgb package is available
+      if (!requireNamespace("sparkxgb", quietly = TRUE)) {
+        stop("Package 'sparkxgb' is required for XGBoost support. Install it with: install.packages('sparkxgb')")
+      }
+      sparkxgb::xgboost_classifier(
+        sc,
+        features_col = "features",
+        label_col = "label",
+        prediction_col = "prediction",
+        seed = seed
+      )
+    },
     stop(paste("Unsupported learner:", learner, ". Only 'random_forest' and 'xgboost' are supported."))
   )
 
