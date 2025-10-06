@@ -56,8 +56,8 @@ binary_classification_metrics <- function(predicted_prob, observed_y, decision_t
     auc_val <- NA
     if(requireNamespace("precrec", quietly = TRUE)) {
         tryCatch({
-            roc_curve <- evalmod(scores = predicted_prob, labels = actual)
-            auc_results <- auc(roc_curve)
+            roc_curve <- precrec::evalmod(scores = predicted_prob, labels = actual)
+            auc_results <- precrec::auc(roc_curve)
             auc_val <- auc_results$aucs[auc_results$curvetypes == "ROC"]
         }, error = function(e) {
             warning("Error calculating ROC-AUC: ", e$message)
@@ -70,8 +70,8 @@ binary_classification_metrics <- function(predicted_prob, observed_y, decision_t
     pr_auc_val <- NA
     if(requireNamespace("precrec", quietly = TRUE)) {
         tryCatch({
-            pr_curve <- evalmod(scores = predicted_prob, labels = actual)
-            auc_results <- auc(pr_curve)
+            pr_curve <- precrec::evalmod(scores = predicted_prob, labels = actual)
+            auc_results <- precrec::auc(pr_curve)
             pr_auc_val <- auc_results$aucs[auc_results$curvetypes == "PRC"]
         }, error = function(e) {
             warning("Error calculating PR-AUC: ", e$message)
