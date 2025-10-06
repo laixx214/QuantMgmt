@@ -4,15 +4,17 @@
 \alias{.generate_random_params_spark}
 \title{Generate Random Parameter Combinations for Spark ML}
 \usage{
-.generate_random_params_spark(param_space, n)
+.generate_random_params_spark(learner, param_space, n)
 }
 \arguments{
+\item{learner}{Algorithm name ("random_forest" or "xgboost")}
+
 \item{param_space}{Named list of parameter ranges}
 
 \item{n}{Number of random combinations to generate}
 }
 \value{
-List of parameter lists for ml_cross_validator
+Named list with algorithm name containing parameter vectors for ml_cross_validator
 }
 \description{
 Generate Random Parameter Combinations for Spark ML

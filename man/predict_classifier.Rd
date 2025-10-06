@@ -7,18 +7,19 @@
 predict_classifier(model_results, X_prediction = NULL)
 }
 \arguments{
-\item{model_results}{Output from auto_tune_classifier or auto_tune_classifier_spark
-function (list or named list of learners/models)}
+\item{model_results}{Output from auto_tune_classifier or auto_tune_classifier_spark.
+Can be a list of mlr3 Learner objects, or an S3 object of class
+"spark_ml_ensemble" containing Spark ML models.}
 
-\item{X_prediction}{Matrix or data frame of features for prediction.
-If NULL (default), uses training data from the learners.
-For Spark models, can also be a Spark DataFrame.}
+\item{X_prediction}{Matrix, data frame, or Spark DataFrame of features for prediction.
+- For mlr3 models: data.frame or matrix. If NULL, uses training data.
+- For Spark models: data.frame or Spark DataFrame (tbl_spark). Cannot be NULL.}
 }
 \value{
-List with two elements:
-        - 'untuned_prediction': Individual algorithm predictions + ensemble from untuned models (NULL if no untuned models)
-        - 'tuned_prediction': Individual algorithm predictions + ensemble from tuned models (NULL if no tuned models)
-        Each element contains probability predictions for each algorithm and ensemble averages
+List with two elements (structure depends on model_tuning used during training):
+        - $untuned_prediction: Named list of probability vectors for each algorithm plus $ensemble_avg (NULL if no untuned models)
+        - $tuned_prediction: Named list of probability vectors for each algorithm plus $ensemble_avg (NULL if no tuned models)
+        Probability vectors represent the predicted probability of the positive class (1) for each observation.
 }
 \description{
 This function generates predictions using models returned by auto_tune_classifier
@@ -27,11 +28,22 @@ models and ensemble predictions.
 }
 \examples{
 \dontrun{
-# Predict on new data
+# Example 1: mlr3 models - predict on new data
 predictions <- predict_classifier(model_results, X_new)
 
-# Predict on training data
+# Example 2: mlr3 models - predict on training data
 predictions <- predict_classifier(model_results)
+
+# Example 3: Spark models - predict on new data (data.frame)
+predictions <- predict_classifier(spark_results, X_new)
+
+# Example 4: Spark models - predict on Spark DataFrame
+new_data_tbl <- copy_to(sc, X_new, "new_data")
+predictions <- predict_classifier(spark_results, new_data_tbl)
+
+# Access individual model predictions
+rf_probs <- predictions$tuned_prediction$rf
+ensemble_probs <- predictions$tuned_prediction$ensemble_avg
 }
 
 }

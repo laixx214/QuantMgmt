@@ -14,7 +14,8 @@
 #' @param data Training data (default: NULL). Can be:
 #'   - NULL: X_train and Y_train should be data.frame/matrix and vector
 #'   - Spark DataFrame (tbl_spark): X_train and Y_train should be column names
-#'   - data.frame: Will be converted to Spark DataFrame; X_train and Y_train should be column names. Note column names such as "Sepal.Length" will be converted to "Sepal_Length" in the data.frame. Thus, supply "Sepal_Length" instead of "Sepal.Length".
+#'   - data.frame: Will be converted to Spark DataFrame; X_train and Y_train should be column names.
+#'     Note: sdf_copy_to() converts dots in column names to underscores (e.g., "Sepal.Length" becomes "Sepal_Length").
 #' @param algorithms Named list where each element contains:
 #'   - learner: Spark ML algorithm ("random_forest" or "xgboost")
 #'   - param_space: named list defining parameter ranges for random search (optional if model_tuning = "untuned")
@@ -28,9 +29,10 @@
 #' @param parallelism Number of parallel threads for CV (default: 1)
 #' @param verbose Logical for progress messages (default: TRUE)
 #'
-#' @return List containing (structure depends on model_tuning parameter):
-#'   - tuned: List of tuned Spark ML models (if model_tuning is "tuned" or "all")
-#'   - untuned: List of untuned Spark ML models (if model_tuning is "untuned" or "all")
+#' @return S3 object of class "spark_ml_ensemble" containing:
+#'   - $tuned: List of tuned Spark ML models (if model_tuning is "tuned" or "all")
+#'   - $untuned: List of untuned Spark ML models (if model_tuning is "untuned" or "all")
+#'   Each model element is a fitted Spark ML pipeline model that can be used with ml_predict().
 #'
 #' @importFrom sparklyr sdf_copy_to ft_string_indexer ft_vector_assembler spark_connection
 #' @importFrom sparklyr ml_random_forest_classifier
@@ -90,9 +92,10 @@
 #' iris_df <- iris
 #' iris_df$is_setosa <- ifelse(iris_df$Species == "setosa", 1, 0)
 #'
+#' # Note: Column names with dots will be converted to underscores by sdf_copy_to
 #' results <- auto_tune_classifier_spark(
 #'   sc = sc,
-#'   X_train = c("Sepal.Length", "Sepal.Width", "Petal.Length", "Petal.Width"),
+#'   X_train = c("Sepal_Length", "Sepal_Width", "Petal_Length", "Petal_Width"),
 #'   Y_train = "is_setosa",
 #'   data = iris_df,
 #'   algorithms = algorithms,

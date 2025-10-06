@@ -7,22 +7,38 @@
 evaluate_classifier_performance(
   model_results,
   data = NULL,
-  decision_threshold = 0.5
+  decision_threshold = 0.5,
+  digits = 4
 )
 }
 \arguments{
-\item{model_results}{Output from auto_tune_classifier or auto_tune_classifier_spark
-function (list or named list of learners/models)}
+\item{model_results}{Output from auto_tune_classifier or auto_tune_classifier_spark.
+Can be a list of mlr3 Learner objects, or an S3 object of class
+"spark_ml_ensemble" containing Spark ML models.}
 
-\item{data}{List with two elements: X_validate (features) and Y_validate (outcomes).
-If NULL (default), uses training data from the learners.
-Note: For Spark models, data cannot be NULL - validation data must be provided.}
+\item{data}{List with two elements: X_validate (features) and Y_validate (binary outcomes: 0/1).
+- For mlr3 models: If NULL (default), uses training data from the learners.
+- For Spark models: Cannot be NULL. X_validate can be data.frame or Spark DataFrame,
+  Y_validate should be a vector or single-column Spark DataFrame with binary values (0/1).}
 
 \item{decision_threshold}{Numeric threshold for converting probabilities to class predictions (default: 0.5)}
+
+\item{digits}{Number of decimal places to round performance metrics (default: 4)}
 }
 \value{
-Data frame with performance metrics for each model, including improvement calculations
-        when both tuned and untuned models are present
+Data frame with one row per model/algorithm containing:
+        - algorithm: Algorithm name (e.g., "rf", "xgb", "ensemble")
+        - model_type: "tuned", "untuned", or "improvement_pct"
+        - data_source: "training" or "validation"
+        - classif.acc: Accuracy
+        - classif.auc: Area Under ROC Curve
+        - classif.prauc: Area Under Precision-Recall Curve
+        - classif.f1: F1 Score
+        - classif.precision: Precision
+        - classif.recall: Recall (Sensitivity)
+
+        When both tuned and untuned models exist, improvement_pct rows show percentage
+        improvement from untuned to tuned models for each metric.
 }
 \description{
 This function evaluates the performance of models returned by auto_tune_classifier
@@ -30,12 +46,26 @@ or auto_tune_classifier_spark using comprehensive binary classification metrics.
 }
 \examples{
 \dontrun{
-# Evaluate with validation data
+# Example 1: mlr3 models - evaluate with validation data
 validation_data <- list(X_validate = X_val, Y_validate = Y_val)
 results <- evaluate_classifier_performance(model_results, validation_data)
 
-# Evaluate with training data
+# Example 2: mlr3 models - evaluate with training data
 results <- evaluate_classifier_performance(model_results)
+
+# Example 3: Spark models - evaluate with validation data (required)
+validation_data <- list(X_validate = X_val, Y_validate = Y_val)
+results <- evaluate_classifier_performance(spark_results, validation_data)
+
+# Example 4: Spark models - with Spark DataFrame
+val_tbl <- copy_to(sc, X_val, "val_data")
+validation_data <- list(X_validate = val_tbl, Y_validate = Y_val)
+results <- evaluate_classifier_performance(spark_results, validation_data)
+
+# View results
+print(results)
+# Compare tuned vs untuned performance
+subset(results, model_type == "improvement_pct")
 }
 
 }

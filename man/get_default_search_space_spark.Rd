@@ -29,7 +29,7 @@ algorithms <- list(
   rf = list(
     learner = "random_forest",
     param_space = rf_space,
-    measure = "auc"
+    measure = "areaUnderPR"
   )
 )
 }

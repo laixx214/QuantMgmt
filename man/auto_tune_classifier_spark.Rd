@@ -29,16 +29,18 @@ auto_tune_classifier_spark(
 - vector (binary classification: 0/1 or logical) (when data = NULL)
 - character string of column name (when data is a Spark DataFrame)}
 
-\item{data}{Spark DataFrame containing training data (default: NULL).
-- If NULL: X_train and Y_train should be data.frame/matrix and vector
-- If provided: X_train and Y_train should be column names}
+\item{data}{Training data (default: NULL). Can be:
+- NULL: X_train and Y_train should be data.frame/matrix and vector
+- Spark DataFrame (tbl_spark): X_train and Y_train should be column names
+- data.frame: Will be converted to Spark DataFrame; X_train and Y_train should be column names.
+  Note: sdf_copy_to() converts dots in column names to underscores (e.g., "Sepal.Length" becomes "Sepal_Length").}
 
 \item{algorithms}{Named list where each element contains:
 - learner: Spark ML algorithm ("random_forest" or "xgboost")
 - param_space: named list defining parameter ranges for random search (optional if model_tuning = "untuned")
   * For random_forest: num_trees (100-500), max_depth (3-8), min_instances_per_node (1-10), subsampling_rate (0.5-1), feature_subset_strategy
   * For xgboost: max_iter (50-200), max_depth (3-8), step_size (0.01-0.3), min_instances_per_node (1-10), subsampling_rate (0.5-1), col_sample_by_tree (0.5-1)
-- measure: evaluation metric ("auc", "accuracy", "f1", "weightedPrecision", "weightedRecall")}
+- measure: evaluation metric ("areaUnderROC" or "areaUnderPR")}
 
 \item{cv_folds}{Number of cross-validation folds for tuning (default: 5)}
 
@@ -53,9 +55,10 @@ auto_tune_classifier_spark(
 \item{verbose}{Logical for progress messages (default: TRUE)}
 }
 \value{
-List containing (structure depends on model_tuning parameter):
-  - tuned: List of tuned Spark ML models (if model_tuning is "tuned" or "all")
-  - untuned: List of untuned Spark ML models (if model_tuning is "untuned" or "all")
+S3 object of class "spark_ml_ensemble" containing:
+  - $tuned: List of tuned Spark ML models (if model_tuning is "tuned" or "all")
+  - $untuned: List of untuned Spark ML models (if model_tuning is "untuned" or "all")
+  Each model element is a fitted Spark ML pipeline model that can be used with ml_predict().
 }
 \description{
 This function uses Spark's native ML functions for hyperparameter tuning and model training,
@@ -81,7 +84,7 @@ algorithms <- list(
       subsampling_rate = seq(0.5, 1.0, by = 0.1),
       feature_subset_strategy = c("auto", "sqrt", "log2", "onethird")
     ),
-    measure = "auc"
+    measure = "areaUnderPR"
   )
 )
 
@@ -103,6 +106,21 @@ results <- auto_tune_classifier_spark(
   X_train = c("Sepal_Length", "Sepal_Width", "Petal_Length", "Petal_Width"),
   Y_train = "Species",
   data = iris_tbl,
+  algorithms = algorithms,
+  cv_folds = 5,
+  n_evals = 50
+)
+
+# Example 3: Using regular data.frame with column names (auto-converts to Spark)
+iris_df <- iris
+iris_df$is_setosa <- ifelse(iris_df$Species == "setosa", 1, 0)
+
+# Note: Column names with dots will be converted to underscores by sdf_copy_to
+results <- auto_tune_classifier_spark(
+  sc = sc,
+  X_train = c("Sepal_Length", "Sepal_Width", "Petal_Length", "Petal_Width"),
+  Y_train = "is_setosa",
+  data = iris_df,
   algorithms = algorithms,
   cv_folds = 5,
   n_evals = 50
