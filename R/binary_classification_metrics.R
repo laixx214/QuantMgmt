@@ -10,7 +10,6 @@
 #' @return Data frame with classification metrics: classif.acc, classif.auc, classif.prauc,
 #'         classif.f1, classif.precision, classif.recall
 #'
-#' @importFrom precrec evalmod auc
 #'
 #' @export
 #'

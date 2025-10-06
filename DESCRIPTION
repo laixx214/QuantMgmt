@@ -17,22 +17,17 @@ Imports:
     mlr3tuning,
     bbotk,
     paradox,
-    precrec,
     parallel,
     future,
     future.apply,
-    DBI,
-    jsonlite,
     sparklyr,
-    sparkxgb,
-    dplyr,
-    lgr
+    dplyr
 Suggests:
     mlr3learners,
     ranger,
     xgboost,
-    SparkR,
-    pROC,
-    brickster,
+    sparkxgb,
+    precrec,
+    DBI,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
