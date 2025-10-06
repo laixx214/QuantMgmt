@@ -14,7 +14,7 @@
 #' @param data Training data (default: NULL). Can be:
 #'   - NULL: X_train and Y_train should be data.frame/matrix and vector
 #'   - Spark DataFrame (tbl_spark): X_train and Y_train should be column names
-#'   - data.frame: Will be converted to Spark DataFrame; X_train and Y_train should be column names
+#'   - data.frame: Will be converted to Spark DataFrame; X_train and Y_train should be column names. Note column names such as "Sepal.Length" will be converted to "Sepal_Length" in the data.frame. Thus, supply "Sepal_Length" instead of "Sepal.Length".
 #' @param algorithms Named list where each element contains:
 #'   - learner: Spark ML algorithm ("random_forest" or "xgboost")
 #'   - param_space: named list defining parameter ranges for random search (optional if model_tuning = "untuned")

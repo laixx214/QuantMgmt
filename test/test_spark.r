@@ -108,7 +108,7 @@ cat("═════════════════════════
 
 t3 <- Sys.time()
 res_seq_data <- auto_tune_classifier_spark(
-  sc, c("Sepal.Length", "Sepal.Width", "Petal.Length", "Petal.Width"), "is_setosa", train_data, algorithms, 2, 2, "all", 123, 1, TRUE
+  sc, c("Sepal_Length", "Sepal_Width", "Petal_Length", "Petal_Width"), "is_setosa", train_data, algorithms, 2, 2, "all", 123, 1, TRUE
 )
 time_seq_data <- as.numeric(difftime(Sys.time(), t3, units = "secs"))
 
@@ -123,7 +123,7 @@ cat("═════════════════════════
 
 t4 <- Sys.time()
 res_par_data <- auto_tune_classifier_spark(
-  sc, c("Sepal.Length", "Sepal.Width", "Petal.Length", "Petal.Width"), "is_setosa", train_data, algorithms, 2, 2, "all", 123, 4, TRUE
+  sc, c("Sepal_Length", "Sepal_Width", "Petal_Length", "Petal_Width"), "is_setosa", train_data, algorithms, 2, 2, "all", 123, 4, TRUE
 )
 time_par_data <- as.numeric(difftime(Sys.time(), t4, units = "secs"))
 
