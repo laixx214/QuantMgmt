@@ -9,6 +9,7 @@
 #'             If NULL (default), uses training data from the learners.
 #'             Note: For Spark models, data cannot be NULL - validation data must be provided.
 #' @param decision_threshold Numeric threshold for converting probabilities to class predictions (default: 0.5)
+#' @param digits Number of decimal places to round performance metrics (default: 4)
 #'
 #' @return Data frame with performance metrics for each model, including improvement calculations
 #'         when both tuned and untuned models are present
@@ -27,7 +28,7 @@
 #' results <- evaluate_classifier_performance(model_results)
 #' }
 #'
-evaluate_classifier_performance <- function(model_results, data = NULL, decision_threshold = 0.5) {
+evaluate_classifier_performance <- function(model_results, data = NULL, decision_threshold = 0.5, digits = 4) {
     # Input validation
     if (!is.list(model_results)) {
         stop("model_results must be a list")
@@ -205,6 +206,11 @@ evaluate_classifier_performance <- function(model_results, data = NULL, decision
                    "classif.acc", "classif.auc", "classif.prauc",
                    "classif.f1", "classif.precision", "classif.recall")
     result_df <- result_df[, col_order]
+
+    # Round numeric columns to specified decimal places
+    metric_cols <- c("classif.acc", "classif.auc", "classif.prauc",
+                     "classif.f1", "classif.precision", "classif.recall")
+    result_df[, metric_cols] <- lapply(result_df[, metric_cols], function(x) round(x, digits))
 
     return(result_df)
 }

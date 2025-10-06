@@ -118,7 +118,7 @@ cat("Step 8: Testing Evaluation\n")
 cat("═══════════════════════════════════════════════════════════\n\n")
 
 perf <- evaluate_classifier_performance(
-  res_par, list(X_validate = X_val, Y_validate = Y_val), 0.5
+  res_par, list(X_validate = X_val, Y_validate = Y_val), 0.5, digits = 4
 )
 
 cat("  ✅ Performance metrics calculated\n\n")
