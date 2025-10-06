@@ -11,9 +11,10 @@
 #' @param Y_train Training target. Can be:
 #'   - vector (binary classification: 0/1 or logical) (when data = NULL)
 #'   - character string of column name (when data is a Spark DataFrame)
-#' @param data Spark DataFrame containing training data (default: NULL).
-#'   - If NULL: X_train and Y_train should be data.frame/matrix and vector
-#'   - If provided: X_train and Y_train should be column names
+#' @param data Training data (default: NULL). Can be:
+#'   - NULL: X_train and Y_train should be data.frame/matrix and vector
+#'   - Spark DataFrame (tbl_spark): X_train and Y_train should be column names
+#'   - data.frame: Will be converted to Spark DataFrame; X_train and Y_train should be column names
 #' @param algorithms Named list where each element contains:
 #'   - learner: Spark ML algorithm ("random_forest" or "xgboost")
 #'   - param_space: named list defining parameter ranges for random search (optional if model_tuning = "untuned")
@@ -85,6 +86,20 @@
 #'   n_evals = 50
 #' )
 #'
+#' # Example 3: Using regular data.frame with column names (auto-converts to Spark)
+#' iris_df <- iris
+#' iris_df$is_setosa <- ifelse(iris_df$Species == "setosa", 1, 0)
+#'
+#' results <- auto_tune_classifier_spark(
+#'   sc = sc,
+#'   X_train = c("Sepal.Length", "Sepal.Width", "Petal.Length", "Petal.Width"),
+#'   Y_train = "is_setosa",
+#'   data = iris_df,
+#'   algorithms = algorithms,
+#'   cv_folds = 5,
+#'   n_evals = 50
+#' )
+#'
 #' spark_disconnect(sc)
 #' }
 #'
@@ -131,11 +146,16 @@ auto_tune_classifier_spark <- function(sc,
     target_col <- "target"
 
   } else {
-    # Mode 2: Spark DataFrame with column names
-    if (verbose) message("Input mode: Spark DataFrame with column names")
+    # Mode 2: DataFrame with column names (Spark or regular data.frame)
 
-    if (!inherits(data, "tbl_spark")) {
-      stop("data must be a Spark DataFrame (tbl_spark)")
+    # Convert data.frame to Spark DataFrame if needed
+    if (is.data.frame(data) && !inherits(data, "tbl_spark")) {
+      if (verbose) message("Input mode: data.frame (converting to Spark DataFrame)")
+      data <- sdf_copy_to(sc, data, "training_data", overwrite = TRUE)
+    } else if (inherits(data, "tbl_spark")) {
+      if (verbose) message("Input mode: Spark DataFrame with column names")
+    } else {
+      stop("data must be a data.frame or Spark DataFrame (tbl_spark)")
     }
 
     if (!is.character(X_train)) {
